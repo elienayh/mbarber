@@ -16,8 +16,8 @@ export const RegisterPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
+    <div className="auth-page min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+      <div className="auth-card w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
         <div className="text-center mb-6">
           <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 font-black text-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-amber-500/20">
             MB

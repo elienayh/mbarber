@@ -4,8 +4,16 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --mb-navy-950: #020617;
+    --mb-navy-900: #0f172a;
+    --mb-navy-800: #1e293b;
+    --mb-navy-700: #334155;
+    --mb-navy-600: #475569;
+    --mb-text: #e2e8f0;
+    --mb-muted: #94a3b8;
+    --mb-amber: #f59e0b;
   }
 
   html {
@@ -14,6 +22,8 @@
 
   body {
     @apply min-h-screen font-sans antialiased;
+    background: var(--mb-navy-950);
+    color: var(--mb-text);
     -webkit-tap-highlight-color: transparent;
   }
 }
@@ -35,4 +45,94 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: #71717a;
+}
+
+.landing-page .bg-stone-950 {
+  background-color: var(--mb-navy-950);
+}
+
+.landing-page .bg-stone-900 {
+  background-color: var(--mb-navy-900);
+}
+
+.landing-page .bg-stone-800 {
+  background-color: var(--mb-navy-800);
+}
+
+.landing-page .border-stone-900 {
+  border-color: #0b1d3a;
+}
+
+.landing-page .border-stone-800 {
+  border-color: #263b59;
+}
+
+.landing-page .border-stone-700 {
+  border-color: #3a506d;
+}
+
+.landing-page .text-stone-100,
+.landing-page .text-stone-200 {
+  color: #e2e8f0;
+}
+
+.landing-page .text-stone-300,
+.landing-page .text-stone-400 {
+  color: #a9bad1;
+}
+
+.landing-page .text-stone-500,
+.landing-page .text-stone-600 {
+  color: #7890ad;
+}
+
+/* Keep translucent landing surfaces and gradients on the same navy scale. */
+.landing-page [class~="bg-stone-950/70"],
+.landing-page [class~="bg-stone-950/80"],
+.landing-page [class~="bg-stone-950/90"],
+.landing-page [class~="bg-stone-950/95"] {
+  background-color: rgb(2 6 23 / 0.9);
+}
+
+.landing-page [class~="bg-stone-900/20"],
+.landing-page [class~="bg-stone-900/40"],
+.landing-page [class~="bg-stone-900/60"],
+.landing-page [class~="bg-stone-900/80"],
+.landing-page [class~="bg-stone-900/90"],
+.landing-page [class~="bg-stone-900/95"] {
+  background-color: rgb(15 23 42 / 0.9);
+}
+
+.landing-page [class~="bg-stone-800/90"] {
+  background-color: rgb(30 41 59 / 0.9);
+}
+
+.landing-page [class~="border-stone-800/60"],
+.landing-page [class~="border-stone-800/80"],
+.landing-page [class~="border-stone-800/90"] {
+  border-color: rgb(38 59 89 / 0.9);
+}
+
+.landing-page [class~="from-stone-900/90"] {
+  --tw-gradient-from: rgb(15 23 42 / 0.9) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(15 23 42 / 0) var(--tw-gradient-to-position);
+}
+
+.landing-page [class~="via-stone-900/90"] {
+  --tw-gradient-to: rgb(15 23 42 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), rgb(15 23 42 / 0.9) var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
+
+.landing-page [class~="to-stone-950"] {
+  --tw-gradient-to: var(--mb-navy-950) var(--tw-gradient-to-position);
+}
+
+.auth-page {
+  background: var(--mb-navy-950);
+  color: var(--mb-text);
+}
+
+.auth-page .auth-card {
+  background: var(--mb-navy-900);
+  border-color: #263b59;
 }

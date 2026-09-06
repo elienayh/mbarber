@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -12,6 +12,8 @@ import {
   Lock,
 } from "lucide-react";
 import { formatCurrency, formatPhone } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Appointment {
   id: string;
@@ -26,92 +28,150 @@ interface Appointment {
   isRecurrent?: boolean;
 }
 
+interface Barber {
+  id: string;
+  name: string;
+  nickname: string | null;
+  color: string;
+}
+
+interface ServiceOption {
+  id: string;
+  name: string;
+  price_cents: number;
+  duration_minutes: number;
+}
+
 export const AgendaPage: React.FC = () => {
-  const [selectedDate, setSelectedDate] = useState("Hoje - Quinta, 5 de Setembro");
-
-  const barbers = [
-    { id: "b1", name: "João Silva", nickname: "Navalha", color: "#3b82f6" },
-    { id: "b2", name: "Carlos Barbeiro", nickname: "Mestre", color: "#10b981" },
-    { id: "b3", name: "Lucas Ferreira", nickname: "Freestyle", color: "#8b5cf6" },
-  ];
-
-  const [appointments, setAppointments] = useState<Appointment[]>([
-    {
-      id: "1",
-      barberId: "b1",
-      customerName: "Rodrigo Almeida",
-      customerPhone: "11988887777",
-      serviceName: "Corte Degradê",
-      time: "09:30",
-      durationMinutes: 30,
-      priceCents: 4500,
-      status: "completed",
-    },
-    {
-      id: "2",
-      barberId: "b1",
-      customerName: "Felipe Rodrigues",
-      customerPhone: "11977776666",
-      serviceName: "Barboterapia",
-      time: "11:00",
-      durationMinutes: 30,
-      priceCents: 3500,
-      status: "confirmed",
-      isRecurrent: true,
-    },
-    {
-      id: "3",
-      barberId: "b2",
-      customerName: "Guilherme Santos",
-      customerPhone: "11966665555",
-      serviceName: "Combo Cabelo + Barba",
-      time: "10:30",
-      durationMinutes: 50,
-      priceCents: 7000,
-      status: "in_progress",
-    },
-    {
-      id: "4",
-      barberId: "b3",
-      customerName: "Eduardo Lima",
-      customerPhone: "11955554444",
-      serviceName: "Corte Tradicional",
-      time: "14:00",
-      durationMinutes: 30,
-      priceCents: 4500,
-      status: "scheduled",
-    },
-  ]);
+  const { tenant } = useAuth();
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [services, setServices] = useState<ServiceOption[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [newCustomer, setNewCustomer] = useState("");
   const [newPhone, setNewPhone] = useState("");
-  const [newBarber, setNewBarber] = useState(barbers[0].id);
-  const [newService, setNewService] = useState("Corte Degradê");
+  const [newBarber, setNewBarber] = useState("");
+  const [newService, setNewService] = useState("");
   const [newTime, setNewTime] = useState("15:00");
   const [isRecurrent, setIsRecurrent] = useState(false);
 
-  const handleCreateAppointment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newCustomer || !newTime) return;
+  const dateLabel = useMemo(() => {
+    return new Date(`${selectedDate}T12:00:00`).toLocaleDateString("pt-BR", {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+    });
+  }, [selectedDate]);
 
-    const newApp: Appointment = {
-      id: Date.now().toString(),
-      barberId: newBarber,
-      customerName: newCustomer,
-      customerPhone: newPhone || "11999998888",
-      serviceName: newService,
-      time: newTime,
-      durationMinutes: 30,
-      priceCents: 4500,
-      status: "scheduled",
-      isRecurrent,
+  useEffect(() => {
+    if (!tenant?.id) return;
+
+    const loadAgenda = async () => {
+      setLoading(true);
+      setError(null);
+      const start = `${selectedDate}T00:00:00`;
+      const end = `${selectedDate}T23:59:59`;
+
+      const [{ data: professionalsData, error: professionalsError }, { data: servicesData, error: servicesError }, { data: appointmentsData, error: appointmentsError }] = await Promise.all([
+        (supabase.from("professionals") as any)
+          .select("id, name, nickname, color_hex")
+          .eq("tenant_id", tenant.id)
+          .eq("is_active", true)
+          .order("display_order"),
+        (supabase.from("services") as any)
+          .select("id, name, price_cents, duration_minutes")
+          .eq("tenant_id", tenant.id)
+          .eq("is_active", true)
+          .order("name"),
+        (supabase.from("appointments") as any)
+          .select("id, professional_id, start_time, duration_minutes, price_cents, status, customers(name, phone), services(name)")
+          .eq("tenant_id", tenant.id)
+          .gte("start_time", start)
+          .lte("start_time", end)
+          .neq("status", "canceled")
+          .order("start_time"),
+      ]);
+
+      if (professionalsError || servicesError || appointmentsError) {
+        setError("Não foi possível carregar a agenda.");
+        setLoading(false);
+        return;
+      }
+
+      const loadedBarbers = (professionalsData || []).map((professional: any) => ({
+        id: professional.id,
+        name: professional.name,
+        nickname: professional.nickname,
+        color: professional.color_hex || "#f59e0b",
+      }));
+      const loadedServices = (servicesData || []) as ServiceOption[];
+
+      setBarbers(loadedBarbers);
+      setServices(loadedServices);
+      setNewBarber((current) => current || loadedBarbers[0]?.id || "");
+      setNewService((current) => current || loadedServices[0]?.id || "");
+      setAppointments((appointmentsData || []).map((appointment: any) => ({
+        id: appointment.id,
+        barberId: appointment.professional_id,
+        customerName: appointment.customers?.name || "Cliente",
+        customerPhone: appointment.customers?.phone || "",
+        serviceName: appointment.services?.name || "Serviço",
+        time: new Date(appointment.start_time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+        durationMinutes: appointment.duration_minutes,
+        priceCents: appointment.price_cents,
+        status: appointment.status,
+      })));
+      setLoading(false);
     };
 
-    setAppointments((prev) => [...prev, newApp]);
+    loadAgenda();
+  }, [selectedDate, tenant?.id]);
+
+  const handleCreateAppointment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const service = services.find((item) => item.id === newService);
+    if (!tenant?.id || !newCustomer || !newTime || !newBarber || !service) return;
+
+    const { data: customer, error: customerError } = await (supabase.from("customers") as any)
+      .upsert({ tenant_id: tenant.id, name: newCustomer, phone: newPhone.replace(/\D/g, "") }, { onConflict: "tenant_id,phone" })
+      .select("id")
+      .single();
+
+    if (customerError || !customer) {
+      setError("Não foi possível salvar o cliente.");
+      return;
+    }
+
+    const startTime = `${selectedDate}T${newTime}:00`;
+    const { error: appointmentError } = await (supabase.from("appointments") as any).insert({
+      tenant_id: tenant.id,
+      customer_id: customer.id,
+      professional_id: newBarber,
+      service_id: service.id,
+      start_time: startTime,
+      end_time: new Date(new Date(startTime).getTime() + service.duration_minutes * 60000).toISOString(),
+      duration_minutes: service.duration_minutes,
+      price_cents: service.price_cents,
+      commission_rate: 0,
+      commission_cents: 0,
+      status: "scheduled",
+      origin: "backoffice",
+    });
+
+    if (appointmentError) {
+      setError(appointmentError.message);
+      return;
+    }
+
     setIsNewModalOpen(false);
     setNewCustomer("");
     setNewPhone("");
+    setError(null);
+    setSelectedDate(selectedDate);
   };
 
   const timeSlots = [
@@ -126,14 +186,30 @@ export const AgendaPage: React.FC = () => {
       {/* Agenda Header Controls */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          <button className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+          <button
+            onClick={() => {
+              const date = new Date(`${selectedDate}T12:00:00`);
+              date.setDate(date.getDate() - 1);
+              setSelectedDate(date.toISOString().slice(0, 10));
+            }}
+            className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+            title="Dia anterior"
+          >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800">
             <CalendarIcon className="w-4 h-4 text-amber-500" />
-            <span>{selectedDate}</span>
+            <span className="capitalize">{dateLabel}</span>
           </div>
-          <button className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+          <button
+            onClick={() => {
+              const date = new Date(`${selectedDate}T12:00:00`);
+              date.setDate(date.getDate() + 1);
+              setSelectedDate(date.toISOString().slice(0, 10));
+            }}
+            className="p-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+            title="Próximo dia"
+          >
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
@@ -149,10 +225,21 @@ export const AgendaPage: React.FC = () => {
         </div>
       </div>
 
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+
+      {loading && (
+        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">Carregando agenda...</div>
+      )}
+
       {/* Multi-Barber Agenda Grid */}
       <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[600px]">
         {/* Barber Headers */}
-        <div className="grid grid-cols-4 border-b border-slate-200 bg-slate-50 font-bold text-xs text-slate-700">
+        <div
+          className="grid border-b border-slate-200 bg-slate-50 font-bold text-xs text-slate-700"
+          style={{ gridTemplateColumns: `minmax(90px, 0.8fr) repeat(${Math.max(barbers.length, 1)}, minmax(160px, 1fr))` }}
+        >
           <div className="p-3 border-r border-slate-200 text-slate-400 flex items-center justify-center">
             Horário
           </div>
@@ -173,7 +260,11 @@ export const AgendaPage: React.FC = () => {
         {/* Time Grid Rows */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
           {timeSlots.map((slot) => (
-            <div key={slot} className="grid grid-cols-4 min-h-[56px] hover:bg-slate-50/50">
+            <div
+              key={slot}
+              className="grid min-h-[56px] hover:bg-slate-50/50"
+              style={{ gridTemplateColumns: `minmax(90px, 0.8fr) repeat(${Math.max(barbers.length, 1)}, minmax(160px, 1fr))` }}
+            >
               {/* Time column */}
               <div className="p-2 border-r border-slate-100 text-xs font-bold text-slate-400 flex items-center justify-center">
                 {slot}
@@ -288,10 +379,11 @@ export const AgendaPage: React.FC = () => {
                   onChange={(e) => setNewService(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:border-amber-500 bg-white"
                 >
-                  <option>Corte Tradicional / Degradê (R$ 45,00)</option>
-                  <option>Barba Terapia com Toalha Quente (R$ 35,00)</option>
-                  <option>Combo Cabelo + Barba (R$ 70,00)</option>
-                  <option>Acabamento / Sobrancelha (R$ 20,00)</option>
+                  {services.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {service.name} ({formatCurrency(service.price_cents)})
+                    </option>
+                  ))}
                 </select>
               </div>
 

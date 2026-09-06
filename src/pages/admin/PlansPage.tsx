@@ -1,52 +1,29 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Layers, Plus, Check, Edit2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 export const PlansPage: React.FC = () => {
-  const plans = [
-    {
-      id: "p1",
-      name: "Plano Solo",
-      slug: "solo",
-      price_cents: 3900,
-      cycle: "Mensal",
-      max_professionals: 1,
-      stripe_price_id: "price_1OvXx...",
-      features: ["1 Barbeiro / Cadeira", "Chat Conversacional Ilimitado", "Financeiro Básico", "Relatórios do Mês"],
-    },
-    {
-      id: "p2",
-      name: "Plano Barbearia Pro",
-      slug: "pro",
-      price_cents: 7900,
-      cycle: "Mensal",
-      max_professionals: 5,
-      stripe_price_id: "price_1OvYy...",
-      features: [
-        "Até 5 Barbeiros / Cadeiras",
-        "Chat Conversacional Ilimitado",
-        "Controle de Estoque Completo",
-        "Cálculo Automático de Comissões",
-        "Agendamentos Recorrentes",
-      ],
-      is_popular: true,
-    },
-    {
-      id: "p3",
-      name: "Plano Rede / Enterprise",
-      slug: "enterprise",
-      price_cents: 14900,
-      cycle: "Mensal",
-      max_professionals: 15,
-      stripe_price_id: "price_1OvZz...",
-      features: [
-        "Até 15 Barbeiros",
-        "Todos os recursos liberados",
-        "Suporte Prioritário WhatsApp",
-        "Múltiplas Unidades (Em breve)",
-      ],
-    },
-  ];
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadPlans = async () => {
+      const { data } = await (supabase.from("plans") as any)
+        .select("id, name, slug, price_cents, billing_cycle, max_professionals, stripe_price_id, features, is_active")
+        .eq("is_active", true)
+        .order("price_cents");
+      setPlans((data || []).map((plan: any) => ({
+        ...plan,
+        cycle: plan.billing_cycle === "yearly" ? "Anual" : plan.billing_cycle === "quarterly" ? "Trimestral" : "Mensal",
+        features: Object.entries(plan.features || {}).filter(([, enabled]) => enabled).map(([feature]) => feature),
+        is_popular: plan.slug === "pro",
+      })));
+      setLoading(false);
+    };
+
+    loadPlans();
+  }, []);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -60,7 +37,8 @@ export const PlansPage: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {plans.map((p) => (
+        {loading && <div className="md:col-span-3 text-sm text-slate-400">Carregando planos...</div>}
+        {!loading && plans.map((p) => (
           <div
             key={p.id}
             className={`bg-slate-950 rounded-2xl p-6 border flex flex-col justify-between ${
@@ -87,7 +65,7 @@ export const PlansPage: React.FC = () => {
               </div>
 
               <div className="space-y-2 mt-6 text-xs text-slate-300">
-                {p.features.map((f) => (
+                {p.features.map((f: string) => (
                   <div key={f} className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span>{f}</span>

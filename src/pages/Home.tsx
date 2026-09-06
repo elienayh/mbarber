@@ -65,7 +65,7 @@ export const Home: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100 flex flex-col font-sans selection:bg-amber-500 selection:text-stone-950">
+    <div className="landing-page min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">
       {/* ========================================================================= */}
       {/* 1. HEADER MINIMALISTA & RESPONSIVO */}
       {/* ========================================================================= */}
@@ -109,13 +109,6 @@ export const Home: React.FC = () => {
               className="text-sm font-semibold text-stone-300 hover:text-white px-3 py-2 transition"
             >
               Entrar
-            </Link>
-            <Link
-              to="/dashboard"
-              className="text-sm font-bold bg-amber-500 hover:bg-amber-400 text-stone-950 px-4 py-2.5 rounded-xl transition shadow-lg shadow-amber-500/20 flex items-center gap-1.5"
-            >
-              <span>Acessar Barbearia</span>
-              <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
 
@@ -168,13 +161,6 @@ export const Home: React.FC = () => {
               >
                 Entrar
               </Link>
-              <Link
-                to="/dashboard"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="w-full py-2.5 text-center text-sm font-bold bg-amber-500 text-stone-950 rounded-xl"
-              >
-                Acessar Barbearia
-              </Link>
             </div>
           </div>
         )}
@@ -218,13 +204,6 @@ export const Home: React.FC = () => {
               >
                 <span>Agendar um Horário</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </Link>
-              <Link
-                to="/dashboard"
-                className="w-full sm:w-auto px-7 py-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-100 border border-stone-800 hover:border-stone-700 font-bold text-sm sm:text-base transition flex items-center justify-center gap-2"
-              >
-                <Scissors className="w-4 h-4 text-amber-400" />
-                <span>Acessar Barbearia</span>
               </Link>
             </div>
 

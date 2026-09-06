@@ -11,6 +11,17 @@ interface UserProfile {
   platform_role: string | null;
 }
 
+interface TenantInfo {
+  id: string;
+  slug: string;
+  name: string;
+  trade_name: string;
+  phone: string | null;
+  status: string;
+  trial_ends_at: string | null;
+  primary_color: string | null;
+}
+
 interface TenantMembership {
   tenant_id: string;
   role: string;
@@ -22,6 +33,8 @@ interface AuthState {
   session: Session | null;
   profile: UserProfile | null;
   tenantMembership: TenantMembership | null;
+  tenant: TenantInfo | null;
+  tenantRole: string | null;
   loading: boolean;
   error: string | null;
 }
@@ -29,19 +42,6 @@ interface AuthState {
 interface AuthContextType extends AuthState {
   signIn: (email: string, password: string) => Promise<{ redirectTo: string }>;
   signOut: () => Promise<void>;
-  /**
-   * Determines the correct redirect path based on the authenticated user's
-   * profile and tenant membership. Used after login and for route guards.
-   *
-   * Logic:
-   * 1. If `is_platform_admin === true` → `/admin/dashboard`
-   * 2. If the user has an active `tenant_users` record → `/dashboard`
-   * 3. Fallback → `/` (landing page)
-   *
-   * Prepared for future subdomain split:
-   *   - admin.mbarber.com.br → admin panel only
-   *   - app.mbarber.com.br   → tenant panel only
-   */
   getRedirectPath: () => string;
 }
 
@@ -61,118 +61,117 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     session: null,
     profile: null,
     tenantMembership: null,
+    tenant: null,
+    tenantRole: null,
     loading: true,
     error: null,
   });
 
-  /**
-   * Fetches the user's profile from the `profiles` table and their
-   * tenant membership from `tenant_users`. These two queries determine
-   * whether the user is a platform admin or a barbershop owner/staff.
-   */
   const fetchUserData = useCallback(async (userId: string) => {
     try {
-      // Fetch profile (contains is_platform_admin flag)
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
+      const { data: profile, error: profileError } = await (supabase.from("profiles") as any)
         .select("id, email, full_name, avatar_url, is_platform_admin, platform_role")
         .eq("id", userId)
-        .single();
+        .maybeSingle();
 
       if (profileError) {
         console.error("Error fetching profile:", profileError);
-        return { profile: null, tenantMembership: null };
+        return { profile: null, tenantMembership: null, tenant: null, tenantRole: null, error: "profile_error" };
       }
 
-      // Fetch the user's active tenant membership (first active one)
-      const { data: tenantUsers, error: tenantError } = await supabase
-        .from("tenant_users")
+      if (!profile) {
+        return { profile: null, tenantMembership: null, tenant: null, tenantRole: null, error: "profile_missing" };
+      }
+
+      const { data: tenantMembership, error: tenantError } = await (supabase.from("tenant_users") as any)
         .select("tenant_id, role, is_active")
         .eq("user_id", userId)
         .eq("is_active", true)
-        .limit(1);
+        .maybeSingle();
 
       if (tenantError) {
         console.error("Error fetching tenant membership:", tenantError);
       }
 
-      const tenantMembership = tenantUsers && tenantUsers.length > 0
-        ? tenantUsers[0] as TenantMembership
-        : null;
+      let tenant: TenantInfo | null = null;
+      let tenantRole: string | null = null;
+
+      if (tenantMembership) {
+        tenantRole = tenantMembership.role;
+        const { data: tenantData, error: tenantFetchError } = await (supabase.from("tenants") as any)
+          .select("id, slug, name, trade_name, phone, status, trial_ends_at, primary_color")
+          .eq("id", tenantMembership.tenant_id)
+          .maybeSingle();
+
+        if (tenantFetchError) {
+          console.error("Error fetching tenant:", tenantFetchError);
+        }
+
+        tenant = tenantData as TenantInfo | null;
+      }
 
       return {
         profile: profile as UserProfile,
-        tenantMembership,
+        tenantMembership: tenantMembership as TenantMembership | null,
+        tenant,
+        tenantRole,
+        error: null,
       };
     } catch (err) {
       console.error("Unexpected error fetching user data:", err);
-      return { profile: null, tenantMembership: null };
+      return { profile: null, tenantMembership: null, tenant: null, tenantRole: null, error: "unexpected_auth_error" };
     }
   }, []);
 
-  /**
-   * Determines the correct redirect based on the user's role.
-   * Prepared for future subdomain separation (admin.mbarber.com.br).
-   */
   const getRedirectPath = useCallback((): string => {
-    // Future: detect subdomain for routing
-    // const hostname = window.location.hostname;
-    // const isAdminSubdomain = hostname.startsWith("admin.");
-
     if (state.profile?.is_platform_admin) {
-      return "/admin/dashboard";
+      return "/admin";
     }
 
     if (state.tenantMembership?.is_active) {
       return "/dashboard";
     }
 
-    // User exists but has no tenant and is not admin → landing
     return "/";
   }, [state.profile, state.tenantMembership]);
 
-  /**
-   * Sign in with email and password via Supabase Auth.
-   * After authentication, fetches the user's profile and tenant data
-   * to determine the correct redirect destination.
-   */
   const signIn = useCallback(async (email: string, password: string): Promise<{ redirectTo: string }> => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
+    setState((prev) => ({ ...prev, loading: true, error: null }));
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      setState(prev => ({ ...prev, loading: false, error: error.message }));
+      setState((prev) => ({ ...prev, loading: false, error: error.message }));
       throw error;
     }
 
     if (data.user) {
-      const { profile, tenantMembership } = await fetchUserData(data.user.id);
+      const { profile, tenantMembership, tenant, tenantRole, error: fetchError } = await fetchUserData(data.user.id);
 
       setState({
         user: data.user,
         session: data.session,
         profile,
         tenantMembership,
+        tenant,
+        tenantRole,
         loading: false,
-        error: null,
+        error: fetchError ?? null,
       });
 
-      // Determine redirect based on fetched data (not state, which hasn't updated yet)
       if (profile?.is_platform_admin) {
-        return { redirectTo: "/admin/dashboard" };
+        return { redirectTo: "/admin" };
       }
+
       if (tenantMembership?.is_active) {
         return { redirectTo: "/dashboard" };
       }
-      return { redirectTo: "/" };
+
+      return { redirectTo: "/auth/login" };
     }
 
-    setState(prev => ({ ...prev, loading: false }));
-    return { redirectTo: "/" };
+    setState((prev) => ({ ...prev, loading: false }));
+    return { redirectTo: "/auth/login" };
   }, [fetchUserData]);
 
   const signOut = useCallback(async () => {
@@ -182,12 +181,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       session: null,
       profile: null,
       tenantMembership: null,
+      tenant: null,
+      tenantRole: null,
       loading: false,
       error: null,
     });
   }, []);
 
-  // Initialize: check for existing session and listen for auth changes
   useEffect(() => {
     let mounted = true;
 
@@ -195,52 +195,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: { session } } = await supabase.auth.getSession();
 
       if (session?.user && mounted) {
-        const { profile, tenantMembership } = await fetchUserData(session.user.id);
+        const { profile, tenantMembership, tenant, tenantRole, error: fetchError } = await fetchUserData(session.user.id);
         setState({
           user: session.user,
           session,
           profile,
           tenantMembership,
+          tenant,
+          tenantRole,
           loading: false,
-          error: null,
+          error: fetchError ?? null,
         });
       } else if (mounted) {
-        setState(prev => ({ ...prev, loading: false }));
+        setState((prev) => ({ ...prev, loading: false }));
       }
     };
 
     initializeAuth();
 
-    // Listen for auth state changes (login, logout, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (!mounted) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
 
-        if (event === "SIGNED_OUT" || !session) {
-          setState({
-            user: null,
-            session: null,
-            profile: null,
-            tenantMembership: null,
-            loading: false,
-            error: null,
-          });
-          return;
-        }
-
-        if (session?.user && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED")) {
-          const { profile, tenantMembership } = await fetchUserData(session.user.id);
-          setState({
-            user: session.user,
-            session,
-            profile,
-            tenantMembership,
-            loading: false,
-            error: null,
-          });
-        }
+      if (event === "SIGNED_OUT" || !session) {
+        setState({
+          user: null,
+          session: null,
+          profile: null,
+          tenantMembership: null,
+          tenant: null,
+          tenantRole: null,
+          loading: false,
+          error: null,
+        });
+        return;
       }
-    );
+
+      if (session?.user && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED")) {
+        const { profile, tenantMembership, tenant, tenantRole, error: fetchError } = await fetchUserData(session.user.id);
+        setState({
+          user: session.user,
+          session,
+          profile,
+          tenantMembership,
+          tenant,
+          tenantRole,
+          loading: false,
+          error: fetchError ?? null,
+        });
+      }
+    });
 
     return () => {
       mounted = false;

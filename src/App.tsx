@@ -6,6 +6,7 @@ import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { Home } from "./pages/Home";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { RegisterPage } from "./pages/auth/RegisterPage";
+import { ResetPasswordPage } from "./pages/auth/ResetPasswordPage";
 import { DashboardPage } from "./pages/tenant/DashboardPage";
 import { AgendaPage } from "./pages/tenant/AgendaPage";
 import { ClientsPage } from "./pages/tenant/ClientsPage";
@@ -31,6 +32,7 @@ function App() {
         {/* Auth Routes */}
         <Route path="/auth/login" element={<LoginPage />} />
         <Route path="/auth/register" element={<RegisterPage />} />
+        <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
 
         {/* Backoffice da Barbearia (Tenant) — requer autenticação */}
         <Route

@@ -1,15 +1,30 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Lock, Mail, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { signIn } = useAuth();
+  const { signIn, getRedirectPath, user, loading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shouldRedirect, setShouldRedirect] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+
+  useEffect(() => {
+    if (!shouldRedirect || authLoading || !user) return;
+    const redirectTo = getRedirectPath();
+    if (redirectTo === "/") {
+      setError("Sua conta não possui um painel ativo.");
+      setShouldRedirect(false);
+      return;
+    }
+    navigate(redirectTo, { replace: true });
+  }, [authLoading, getRedirectPath, navigate, shouldRedirect, user]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,7 +33,11 @@ export const LoginPage: React.FC = () => {
 
     try {
       const { redirectTo } = await signIn(email, password);
-      navigate(redirectTo, { replace: true });
+      if (redirectTo === "/auth/login") {
+        setError("A conta foi autenticada, mas não possui um acesso ativo.");
+        return;
+      }
+      setShouldRedirect(true);
     } catch (err: any) {
       // Map common Supabase auth errors to user-friendly Portuguese messages
       const message = err?.message || "";
@@ -36,9 +55,30 @@ export const LoginPage: React.FC = () => {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError("Informe seu e-mail para receber o link de recuperação.");
+      return;
+    }
+
+    setError(null);
+    setForgotLoading(true);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    });
+    setForgotLoading(false);
+
+    if (resetError) {
+      setError("Não foi possível enviar o link de recuperação. Tente novamente.");
+      return;
+    }
+
+    setForgotSent(true);
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
+    <div className="auth-page min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+      <div className="auth-card w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
         <div className="text-center mb-8">
           <div className="w-12 h-12 rounded-2xl bg-amber-500 text-slate-950 font-black text-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-amber-500/20">
             MB
@@ -54,6 +94,12 @@ export const LoginPage: React.FC = () => {
           <div className="mb-5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
             <span className="text-xs text-red-300 leading-relaxed">{error}</span>
+          </div>
+        )}
+
+        {forgotSent && (
+          <div className="mb-5 p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300">
+            Enviamos um link de recuperação para este e-mail. Verifique sua caixa de entrada.
           </div>
         )}
 
@@ -77,9 +123,14 @@ export const LoginPage: React.FC = () => {
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-xs font-semibold text-slate-300">Senha</label>
-              <a href="#" className="text-xs text-amber-400 hover:underline">
-                Esqueceu?
-              </a>
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                disabled={forgotLoading}
+                className="text-xs text-amber-400 hover:underline disabled:opacity-50"
+              >
+                {forgotLoading ? "Enviando..." : "Esqueceu?"}
+              </button>
             </div>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />

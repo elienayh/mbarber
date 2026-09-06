@@ -1,87 +1,65 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  Calendar,
-  Users,
-  DollarSign,
-  TrendingUp,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  Plus,
-  Scissors,
-  Phone,
-  ChevronRight,
-  Sparkles,
-} from "lucide-react";
+import { Calendar, DollarSign, TrendingUp, Clock, CheckCircle2 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 import { formatCurrency, formatPhone } from "@/lib/utils";
 
+interface DashboardAppointment {
+  id: string;
+  start_time: string;
+  status: string;
+  price_cents: number;
+  customers: { name: string; phone: string } | null;
+  services: { name: string } | null;
+  professionals: { name: string } | null;
+}
+
 export const DashboardPage: React.FC = () => {
-  const [appointments, setAppointments] = useState([
-    {
-      id: "a1",
-      time: "09:30",
-      customer: "Marcos Vinicius",
-      phone: "11988887777",
-      service: "Corte Degradê",
-      barber: "João Silva",
-      price_cents: 4500,
-      status: "completed",
-    },
-    {
-      id: "a2",
-      time: "10:30",
-      customer: "Guilherme Santos",
-      phone: "11977776666",
-      service: "Combo Cabelo + Barba",
-      barber: "Carlos Barbeiro",
-      price_cents: 7000,
-      status: "in_progress",
-    },
-    {
-      id: "a3",
-      time: "11:15",
-      customer: "Felipe Rodrigues",
-      phone: "11966665555",
-      service: "Barboterapia",
-      barber: "João Silva",
-      price_cents: 3500,
-      status: "confirmed",
-    },
-    {
-      id: "a4",
-      time: "13:00",
-      customer: "Eduardo Lima",
-      phone: "11955554444",
-      service: "Corte Tradicional",
-      barber: "Lucas Ferreira",
-      price_cents: 4500,
-      status: "scheduled",
-    },
-    {
-      id: "a5",
-      time: "14:00",
-      customer: "André Souza",
-      phone: "11944443333",
-      service: "Corte Degradê",
-      barber: "Carlos Barbeiro",
-      price_cents: 4500,
-      status: "scheduled",
-    },
-  ]);
+  const { tenant } = useAuth();
+  const [appointments, setAppointments] = useState<DashboardAppointment[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleUpdateStatus = (id: string, newStatus: string) => {
-    setAppointments((prev) =>
-      prev.map((app) => (app.id === id ? { ...app, status: newStatus } : app))
-    );
-  };
+  useEffect(() => {
+    if (!tenant?.id) {
+      setAppointments([]);
+      setLoading(false);
+      return;
+    }
 
-  const stats = {
-    totalAppointments: 14,
-    completed: appointments.filter((a) => a.status === "completed").length,
-    occupancyRate: "78%",
-    projectedRevenue: 72000,
-  };
+    const today = new Date();
+    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).toISOString();
+
+    const loadAppointments = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("id, start_time, status, price_cents, customers(name, phone), services(name), professionals(name)")
+        .eq("tenant_id", tenant.id)
+        .gte("start_time", startOfDay)
+        .lt("start_time", endOfDay)
+        .order("start_time", { ascending: true });
+
+      if (!error) {
+        setAppointments((data || []) as DashboardAppointment[]);
+      }
+      setLoading(false);
+    };
+
+    loadAppointments();
+  }, [tenant?.id]);
+
+  const stats = useMemo(() => {
+    const totalAppointments = appointments.length;
+    const completed = appointments.filter((a) => a.status === "completed").length;
+    const projectedRevenue = appointments
+      .filter((a) => !["canceled", "no_show"].includes(a.status))
+      .reduce((sum, a) => sum + Number(a.price_cents || 0), 0);
+    const occupancyRate = totalAppointments > 0 ? `${Math.min(100, Math.round((completed / totalAppointments) * 100))}%` : "0%";
+
+    return { totalAppointments, completed, occupancyRate, projectedRevenue };
+  }, [appointments]);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -100,12 +78,11 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Top Welcome Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
         <div>
           <h2 className="text-xl sm:text-2xl font-black text-slate-900">Operação de Hoje</h2>
           <p className="text-sm text-slate-500 mt-0.5">
-            Quinta-feira, 5 de Setembro • Agenda em tempo real
+            {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })} • Agenda em tempo real
           </p>
         </div>
         <div className="flex items-center gap-2.5">
@@ -119,7 +96,6 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
@@ -127,8 +103,8 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div>
             <div className="text-xs font-semibold text-slate-400 uppercase">Atendimentos Hoje</div>
-            <div className="text-2xl font-black text-slate-900">{stats.totalAppointments}</div>
-            <div className="text-xs text-emerald-600 font-medium mt-0.5">5 confirmados pelo chat</div>
+            <div className="text-2xl font-black text-slate-900">{loading ? "..." : stats.totalAppointments}</div>
+            <div className="text-xs text-emerald-600 font-medium mt-0.5">{stats.totalAppointments > 0 ? `${stats.totalAppointments} compromissos no dia` : "Nenhum agendamento encontrado"}</div>
           </div>
         </div>
 
@@ -139,7 +115,7 @@ export const DashboardPage: React.FC = () => {
           <div>
             <div className="text-xs font-semibold text-slate-400 uppercase">Faturamento Previsto</div>
             <div className="text-2xl font-black text-slate-900">{formatCurrency(stats.projectedRevenue)}</div>
-            <div className="text-xs text-slate-400 mt-0.5">Média de R$ 51,40 / cliente</div>
+            <div className="text-xs text-slate-400 mt-0.5">Baseado nos agendamentos do dia</div>
           </div>
         </div>
 
@@ -150,7 +126,7 @@ export const DashboardPage: React.FC = () => {
           <div>
             <div className="text-xs font-semibold text-slate-400 uppercase">Ocupação das Cadeiras</div>
             <div className="text-2xl font-black text-slate-900">{stats.occupancyRate}</div>
-            <div className="text-xs text-amber-600 font-medium mt-0.5">3 barbeiros em escala</div>
+            <div className="text-xs text-amber-600 font-medium mt-0.5">{stats.totalAppointments > 0 ? "Atualizado em tempo real" : "Sem dados de ocupação"}</div>
           </div>
         </div>
 
@@ -160,20 +136,19 @@ export const DashboardPage: React.FC = () => {
           </div>
           <div>
             <div className="text-xs font-semibold text-slate-400 uppercase">Finalizados</div>
-            <div className="text-2xl font-black text-slate-900">{stats.completed} de {stats.totalAppointments}</div>
-            <div className="text-xs text-purple-600 font-medium mt-0.5">Sem faltas registradas</div>
+            <div className="text-2xl font-black text-slate-900">{loading ? "..." : `${stats.completed} de ${stats.totalAppointments}`}</div>
+            <div className="text-xs text-purple-600 font-medium mt-0.5">{stats.completed === 0 ? "Nenhum atendimento concluído hoje" : "Hoje"}</div>
           </div>
         </div>
       </div>
 
-      {/* Main Table: Next Appointments */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-amber-500" />
             <h3 className="font-bold text-slate-900 text-base">Próximos Clientes do Dia</h3>
           </div>
-          <span className="text-xs text-slate-400 font-medium">Sincronização em tempo real ativa</span>
+          <span className="text-xs text-slate-400 font-medium">{loading ? "Carregando..." : "Sincronização em tempo real ativa"}</span>
         </div>
 
         <div className="overflow-x-auto">
@@ -186,64 +161,36 @@ export const DashboardPage: React.FC = () => {
                 <th className="py-3.5 px-4">Barbeiro</th>
                 <th className="py-3.5 px-4">Valor</th>
                 <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4 text-right">Ações Rápidas</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {appointments.map((app) => (
-                <tr key={app.id} className="hover:bg-slate-50/80 transition">
-                  <td className="py-3.5 px-4 font-bold text-slate-900 text-base">{app.time}</td>
-                  <td className="py-3.5 px-4">
-                    <div className="font-semibold text-slate-900">{app.customer}</div>
-                    <div className="text-xs text-slate-400">{formatPhone(app.phone)}</div>
-                  </td>
-                  <td className="py-3.5 px-4 font-medium">{app.service}</td>
-                  <td className="py-3.5 px-4">
-                    <span className="px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-medium">
-                      {app.barber}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 font-bold text-slate-900">{formatCurrency(app.price_cents)}</td>
-                  <td className="py-3.5 px-4">{getStatusBadge(app.status)}</td>
-                  <td className="py-3.5 px-4 text-right space-x-2">
-                    {app.status === "scheduled" && (
-                      <button
-                        onClick={() => handleUpdateStatus(app.id, "confirmed")}
-                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 transition"
-                      >
-                        Confirmar
-                      </button>
-                    )}
-                    {app.status === "confirmed" && (
-                      <button
-                        onClick={() => handleUpdateStatus(app.id, "in_progress")}
-                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition"
-                      >
-                        Iniciar Corte
-                      </button>
-                    )}
-                    {app.status === "in_progress" && (
-                      <button
-                        onClick={() => handleUpdateStatus(app.id, "completed")}
-                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition"
-                      >
-                        Finalizar & Caixa
-                      </button>
-                    )}
-                    <a
-                      href={`https://wa.me/55${app.phone}?text=${encodeURIComponent(
-                        `Olá ${app.customer}! Confirmamos seu horário às ${app.time} na Barbearia Vintage Club.`
-                      )}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="p-1.5 inline-flex rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition"
-                      title="Abrir WhatsApp"
-                    >
-                      <Phone className="w-4 h-4" />
-                    </a>
+              {appointments.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-sm text-slate-500">
+                    Nenhum agendamento encontrado para hoje.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                appointments.map((app) => (
+                  <tr key={app.id} className="hover:bg-slate-50/80 transition">
+                    <td className="py-3.5 px-4 font-bold text-slate-900 text-base">
+                      {new Date(app.start_time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="font-semibold text-slate-900">{app.customers?.name || "Cliente"}</div>
+                      <div className="text-xs text-slate-400">{formatPhone(app.customers?.phone || "")}</div>
+                    </td>
+                    <td className="py-3.5 px-4 font-medium">{app.services?.name || "Serviço"}</td>
+                    <td className="py-3.5 px-4">
+                      <span className="px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-medium">
+                        {app.professionals?.name || "Profissional"}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-slate-900">{formatCurrency(Number(app.price_cents || 0))}</td>
+                    <td className="py-3.5 px-4">{getStatusBadge(app.status)}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

@@ -1,60 +1,31 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Scissors, Plus, Clock, DollarSign, Check, Edit2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const ServicesPage: React.FC = () => {
-  const [services, setServices] = useState([
-    {
-      id: "s1",
-      name: "Corte Tradicional / Degradê",
-      category: "Cabelo",
-      price_cents: 4500,
-      duration_minutes: 30,
-      buffer_minutes: 5,
-      is_active: true,
-      professionals_count: 3,
-    },
-    {
-      id: "s2",
-      name: "Barba Terapia com Toalha Quente",
-      category: "Barba",
-      price_cents: 3500,
-      duration_minutes: 30,
-      buffer_minutes: 5,
-      is_active: true,
-      professionals_count: 2,
-    },
-    {
-      id: "s3",
-      name: "Combo Cabelo + Barba Completa",
-      category: "Combos",
-      price_cents: 7000,
-      duration_minutes: 50,
-      buffer_minutes: 10,
-      is_active: true,
-      professionals_count: 3,
-    },
-    {
-      id: "s4",
-      name: "Acabamento / Pezinho / Sobrancelha",
-      category: "Acabamento",
-      price_cents: 2000,
-      duration_minutes: 20,
-      buffer_minutes: 0,
-      is_active: true,
-      professionals_count: 3,
-    },
-    {
-      id: "s5",
-      name: "Platinado / Descoloração Global",
-      category: "Química",
-      price_cents: 15000,
-      duration_minutes: 120,
-      buffer_minutes: 15,
-      is_active: false,
-      professionals_count: 1,
-    },
-  ]);
+  const { tenant } = useAuth();
+  const [services, setServices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!tenant?.id) return;
+
+    const loadServices = async () => {
+      const { data } = await (supabase.from("services") as any)
+        .select("id, name, category, price_cents, duration_minutes, buffer_minutes, is_active, professional_services(count)")
+        .eq("tenant_id", tenant.id)
+        .order("name");
+      setServices((data || []).map((service: any) => ({
+        ...service,
+        professionals_count: service.professional_services?.[0]?.count || 0,
+      })));
+      setLoading(false);
+    };
+
+    loadServices();
+  }, [tenant?.id]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -74,7 +45,8 @@ export const ServicesPage: React.FC = () => {
 
       {/* Services Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {services.map((srv) => (
+        {loading && <div className="md:col-span-2 lg:col-span-3 text-sm text-slate-500">Carregando serviços...</div>}
+        {!loading && services.map((srv) => (
           <div
             key={srv.id}
             className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm hover:border-amber-400 transition flex flex-col justify-between"

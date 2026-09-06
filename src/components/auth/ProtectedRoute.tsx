@@ -22,10 +22,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
   requireAdmin = false,
 }) => {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, tenantMembership, loading } = useAuth();
   const location = useLocation();
 
-  // Show loading state while auth initializes
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
@@ -39,14 +38,16 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
-  // Not authenticated → login page
   if (!user) {
     return <Navigate to="/auth/login" state={{ from: location }} replace />;
   }
 
-  // Requires admin but user is not admin → redirect to tenant dashboard
   if (requireAdmin && !profile?.is_platform_admin) {
     return <Navigate to="/dashboard" replace />;
+  }
+
+  if (!requireAdmin && !profile?.is_platform_admin && !tenantMembership?.is_active) {
+    return <Navigate to="/auth/login" replace />;
   }
 
   return <>{children}</>;

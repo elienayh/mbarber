@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Link, useLocation, Outlet } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Calendar,
   Users,
@@ -20,14 +21,15 @@ import {
 export const TenantLayout: React.FC = () => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { tenant, tenantRole, profile } = useAuth();
 
-  // Mocked demo state for current tenant
-  const tenant = {
-    trade_name: "Barbearia Vintage Club",
-    slug: "vintage-barber",
-    status: "trial",
-    trial_days_left: 12,
-  };
+  const trialDaysLeft = useMemo(() => {
+    if (!tenant?.trial_ends_at) return 0;
+    const end = new Date(tenant.trial_ends_at);
+    const today = new Date();
+    const diffMs = end.getTime() - today.getTime();
+    return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  }, [tenant?.trial_ends_at]);
 
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -41,9 +43,11 @@ export const TenantLayout: React.FC = () => {
     { label: "Configurações", href: "/configuracoes", icon: Settings },
   ];
 
+  const displayUserName = profile?.full_name || "Usuário";
+  const displayRole = tenantRole ? tenantRole.charAt(0).toUpperCase() + tenantRole.slice(1) : "Membro";
+
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {/* Sidebar Desktop */}
       <aside className="hidden md:flex flex-col w-64 bg-slate-900 text-white border-r border-slate-800">
         <div className="p-5 border-b border-slate-800 flex items-center justify-between">
           <Link to="/dashboard" className="flex items-center gap-2">
@@ -52,19 +56,18 @@ export const TenantLayout: React.FC = () => {
             </div>
             <div>
               <div className="font-bold text-base leading-tight tracking-tight text-white">MetricBarber</div>
-              <div className="text-xs text-slate-400 truncate max-w-[140px]">{tenant.trade_name}</div>
+              <div className="text-xs text-slate-400 truncate max-w-[140px]">{tenant?.trade_name || "Barbearia"}</div>
             </div>
           </Link>
         </div>
 
-        {/* Trial Alert Banner */}
-        {tenant.status === "trial" && (
+        {tenant?.status === "trial" && (
           <div className="mx-3 my-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs">
             <div className="flex items-center gap-1.5 font-semibold text-amber-400">
               <Sparkles className="w-4 h-4" />
               Período de Testes
             </div>
-            <p className="text-slate-300 mt-1">Restam {tenant.trial_days_left} dias de Trial gratuito.</p>
+            <p className="text-slate-300 mt-1">Restam {trialDaysLeft} dias de Trial gratuito.</p>
             <Link
               to="/configuracoes/assinatura"
               className="mt-2 block w-full text-center py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition"
@@ -74,7 +77,6 @@ export const TenantLayout: React.FC = () => {
           </div>
         )}
 
-        {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -96,22 +98,21 @@ export const TenantLayout: React.FC = () => {
           })}
         </nav>
 
-        {/* Public Chat Link */}
         <div className="p-3 border-t border-slate-800">
-          <Link
-            to={`/${tenant.slug}`}
-            target="_blank"
-            className="flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-200 hover:bg-slate-700 transition"
-          >
-            <span>Ver Chat de Agendamento</span>
-            <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
-          </Link>
+          {tenant?.slug && (
+            <Link
+              to={`/${tenant.slug}`}
+              target="_blank"
+              className="flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-200 hover:bg-slate-700 transition"
+            >
+              <span>Ver Chat de Agendamento</span>
+              <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+            </Link>
+          )}
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Topbar */}
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 z-10">
           <div className="flex items-center gap-3">
             <button
@@ -126,14 +127,16 @@ export const TenantLayout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link
-              to={`/${tenant.slug}`}
-              target="_blank"
-              className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition"
-            >
-              <span>Link do Chat</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </Link>
+            {tenant?.slug && (
+              <Link
+                to={`/${tenant.slug}`}
+                target="_blank"
+                className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition"
+              >
+                <span>Link do Chat</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+            )}
 
             <button className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-100">
               <Bell className="w-5 h-5" />
@@ -142,17 +145,16 @@ export const TenantLayout: React.FC = () => {
 
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
               <div className="w-8 h-8 rounded-full bg-slate-800 text-amber-400 font-bold text-xs flex items-center justify-center">
-                OP
+                {displayUserName.slice(0, 2).toUpperCase() || "MB"}
               </div>
               <div className="hidden lg:block text-left text-xs">
-                <div className="font-semibold text-slate-800">Oliveira (Dono)</div>
-                <div className="text-slate-400">Proprietário</div>
+                <div className="font-semibold text-slate-800">{displayUserName}</div>
+                <div className="text-slate-400">{displayRole}</div>
               </div>
             </div>
           </div>
         </header>
 
-        {/* Mobile Navigation Drawer */}
         {isMobileMenuOpen && (
           <div className="fixed inset-0 z-50 md:hidden bg-slate-950/60 backdrop-blur-sm flex">
             <div className="w-64 bg-slate-900 text-white h-full flex flex-col p-4 shadow-xl">
@@ -180,7 +182,6 @@ export const TenantLayout: React.FC = () => {
           </div>
         )}
 
-        {/* Page Body */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50">
           <Outlet />
         </main>

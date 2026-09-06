@@ -1,45 +1,27 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { UserCheck, Plus, Clock, Percent, Calendar, Edit2, Shield } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const ProfessionalsPage: React.FC = () => {
-  const [professionals, setProfessionals] = useState([
-    {
-      id: "p1",
-      name: "João Silva",
-      nickname: "Navalha de Ouro",
-      phone: "(11) 98888-1111",
-      email: "joao@barbeariavintage.com",
-      commission_rate: 50,
-      color_hex: "#3b82f6",
-      is_active: true,
-      role: "Barbeiro Sênior",
-      working_days: "Seg a Sáb (09h - 19h)",
-    },
-    {
-      id: "p2",
-      name: "Carlos Barbeiro",
-      nickname: "Mestre da Barboterapia",
-      phone: "(11) 97777-2222",
-      email: "carlos@barbeariavintage.com",
-      commission_rate: 50,
-      color_hex: "#10b981",
-      is_active: true,
-      role: "Barbeiro Pleno",
-      working_days: "Ter a Sáb (10h - 20h)",
-    },
-    {
-      id: "p3",
-      name: "Lucas Ferreira",
-      nickname: "Especialista em Freestyle",
-      phone: "(11) 96666-3333",
-      email: "lucas@barbeariavintage.com",
-      commission_rate: 45,
-      color_hex: "#8b5cf6",
-      is_active: true,
-      role: "Barbeiro Júnior",
-      working_days: "Qua a Dom (11h - 20h)",
-    },
-  ]);
+  const { tenant } = useAuth();
+  const [professionals, setProfessionals] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!tenant?.id) return;
+
+    const loadProfessionals = async () => {
+      const { data } = await (supabase.from("professionals") as any)
+        .select("id, name, nickname, phone, email, commission_rate, color_hex, is_active")
+        .eq("tenant_id", tenant.id)
+        .order("display_order");
+      setProfessionals(data || []);
+      setLoading(false);
+    };
+
+    loadProfessionals();
+  }, [tenant?.id]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -59,7 +41,8 @@ export const ProfessionalsPage: React.FC = () => {
 
       {/* Professionals List */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {professionals.map((pro) => (
+        {loading && <div className="md:col-span-3 text-sm text-slate-500">Carregando profissionais...</div>}
+        {!loading && professionals.map((pro) => (
           <div
             key={pro.id}
             className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm hover:shadow transition flex flex-col justify-between"
@@ -85,7 +68,7 @@ export const ProfessionalsPage: React.FC = () => {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Escala de Horários:</span>
-                  <span className="font-medium text-slate-800">{pro.working_days}</span>
+                  <span className="font-medium text-slate-800">Escala não configurada</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Contato:</span>

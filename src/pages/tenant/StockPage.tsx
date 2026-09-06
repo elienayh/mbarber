@@ -1,50 +1,29 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Package, AlertTriangle, Plus, ArrowDown, ArrowUp, Search } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const StockPage: React.FC = () => {
-  const [products, setProducts] = useState([
-    {
-      id: "pr1",
-      name: "Pomada Modeladora Efeito Matte 150g",
-      sku: "POM-MAT-01",
-      category: "Pomadas",
-      cost_price_cents: 2200,
-      sale_price_cents: 6500,
-      current_stock: 14,
-      min_stock_alert: 5,
-    },
-    {
-      id: "pr2",
-      name: "Óleo para Barba Hidratante 30ml",
-      sku: "OLE-BAR-02",
-      category: "Óleos",
-      cost_price_cents: 1800,
-      sale_price_cents: 4500,
-      current_stock: 8,
-      min_stock_alert: 4,
-    },
-    {
-      id: "pr3",
-      name: "Shampoo Anticaspa Fortalecedor 250ml",
-      sku: "SHA-FOR-03",
-      category: "Shampoo",
-      cost_price_cents: 2500,
-      sale_price_cents: 5500,
-      current_stock: 2,
-      min_stock_alert: 5, // Alert!
-    },
-    {
-      id: "pr4",
-      name: "Navalhetes Descartáveis Aço Inox (Caixa 100un)",
-      sku: "NAV-DES-04",
-      category: "Insumos Bancada",
-      cost_price_cents: 3200,
-      sale_price_cents: 0, // Uso interno
-      current_stock: 6,
-      min_stock_alert: 3,
-    },
-  ]);
+  const { tenant } = useAuth();
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!tenant?.id) return;
+
+    const loadProducts = async () => {
+      const { data } = await (supabase.from("products") as any)
+        .select("id, name, sku, category, cost_price_cents, sale_price_cents, current_stock, min_stock_alert")
+        .eq("tenant_id", tenant.id)
+        .eq("is_active", true)
+        .order("name");
+      setProducts(data || []);
+      setLoading(false);
+    };
+
+    loadProducts();
+  }, [tenant?.id]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -80,7 +59,8 @@ export const StockPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {products.map((p) => {
+              {loading && <tr><td colSpan={7} className="py-8 text-center text-slate-500">Carregando estoque...</td></tr>}
+              {!loading && products.map((p) => {
                 const isLowStock = p.current_stock <= p.min_stock_alert;
                 return (
                   <tr key={p.id} className="hover:bg-slate-50/80 transition">

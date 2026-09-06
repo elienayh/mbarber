@@ -1,8 +1,63 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { BarChart3, TrendingUp, Users, Scissors, Award, Calendar } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const ReportsPage: React.FC = () => {
+  const { tenant } = useAuth();
+  const [appointments, setAppointments] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!tenant?.id) return;
+
+    const loadReports = async () => {
+      const since = new Date();
+      since.setDate(since.getDate() - 30);
+      const { data } = await (supabase.from("appointments") as any)
+        .select("price_cents, commission_cents, service_id, professional_id, services(name), professionals(name, nickname)")
+        .eq("tenant_id", tenant.id)
+        .gte("start_time", since.toISOString())
+        .neq("status", "canceled");
+      setAppointments(data || []);
+    };
+
+    loadReports();
+  }, [tenant?.id]);
+
+  const reportData = useMemo(() => {
+    const services = new Map<string, { name: string; count: number; revenue: number }>();
+    const professionals = new Map<string, { name: string; nickname: string | null; appointments: number; revenue: number; commission: number }>();
+
+    appointments.forEach((appointment) => {
+      const serviceKey = appointment.service_id;
+      const service = services.get(serviceKey) || { name: appointment.services?.name || "Serviço", count: 0, revenue: 0 };
+      service.count += 1;
+      service.revenue += Number(appointment.price_cents || 0);
+      services.set(serviceKey, service);
+
+      const professionalKey = appointment.professional_id;
+      const professional = professionals.get(professionalKey) || {
+        name: appointment.professionals?.name || "Profissional",
+        nickname: appointment.professionals?.nickname || null,
+        appointments: 0,
+        revenue: 0,
+        commission: 0,
+      };
+      professional.appointments += 1;
+      professional.revenue += Number(appointment.price_cents || 0);
+      professional.commission += Number(appointment.commission_cents || 0);
+      professionals.set(professionalKey, professional);
+    });
+
+    const topServices = Array.from(services.values()).sort((a, b) => b.count - a.count).slice(0, 5);
+    const maxCount = Math.max(...topServices.map((service) => service.count), 1);
+    return {
+      topServices: topServices.map((service) => ({ ...service, share: Math.round((service.count / maxCount) * 100) })),
+      professionals: Array.from(professionals.values()).sort((a, b) => b.revenue - a.revenue),
+    };
+  }, [appointments]);
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
@@ -22,12 +77,7 @@ export const ReportsPage: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            {[
-              { name: "Corte Tradicional / Degradê", count: 184, share: 58, revenue: 828000 },
-              { name: "Combo Cabelo + Barba Completa", count: 76, share: 24, revenue: 532000 },
-              { name: "Barba Terapia com Toalha Quente", count: 42, share: 13, revenue: 147000 },
-              { name: "Acabamento / Sobrancelha", count: 16, share: 5, revenue: 32000 },
-            ].map((s) => (
+            {reportData.topServices.map((s) => (
               <div key={s.name} className="space-y-1">
                 <div className="flex justify-between text-xs font-semibold">
                   <span className="text-slate-800">{s.name} ({s.count}x)</span>
@@ -49,11 +99,7 @@ export const ReportsPage: React.FC = () => {
           </div>
 
           <div className="space-y-4">
-            {[
-              { name: "João Silva", nickname: "Navalha", appointments: 138, revenue: 685000, commission: 342500 },
-              { name: "Carlos Barbeiro", nickname: "Mestre", appointments: 112, revenue: 590000, commission: 295000 },
-              { name: "Lucas Ferreira", nickname: "Freestyle", appointments: 68, revenue: 310000, commission: 139500 },
-            ].map((b) => (
+            {reportData.professionals.map((b) => (
               <div key={b.name} className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
                 <div>
                   <div className="font-bold text-slate-900 text-sm">{b.name}</div>
