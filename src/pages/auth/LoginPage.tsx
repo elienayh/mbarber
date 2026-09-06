@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Lock, Mail, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -6,25 +6,13 @@ import { supabase } from "@/lib/supabase";
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const { signIn, getRedirectPath, user, loading: authLoading } = useAuth();
+  const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [shouldRedirect, setShouldRedirect] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
-
-  useEffect(() => {
-    if (!shouldRedirect || authLoading || !user) return;
-    const redirectTo = getRedirectPath();
-    if (redirectTo === "/") {
-      setError("Sua conta não possui um painel ativo.");
-      setShouldRedirect(false);
-      return;
-    }
-    navigate(redirectTo, { replace: true });
-  }, [authLoading, getRedirectPath, navigate, shouldRedirect, user]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +25,7 @@ export const LoginPage: React.FC = () => {
         setError("A conta foi autenticada, mas não possui um acesso ativo.");
         return;
       }
-      setShouldRedirect(true);
+      navigate(redirectTo, { replace: true });
     } catch (err: any) {
       // Map common Supabase auth errors to user-friendly Portuguese messages
       const message = err?.message || "";
