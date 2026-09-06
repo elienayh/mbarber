@@ -1,22 +1,38 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Lock, Mail, ArrowRight, Sparkles, Scissors, ShieldAlert } from "lucide-react";
+import { Lock, Mail, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate("/dashboard");
-  };
+    setError(null);
+    setLoading(true);
 
-  const handleQuickDemo = (type: "tenant" | "admin") => {
-    if (type === "tenant") {
-      navigate("/dashboard");
-    } else {
-      navigate("/admin/dashboard");
+    try {
+      const { redirectTo } = await signIn(email, password);
+      navigate(redirectTo, { replace: true });
+    } catch (err: any) {
+      // Map common Supabase auth errors to user-friendly Portuguese messages
+      const message = err?.message || "";
+      if (message.includes("Invalid login credentials")) {
+        setError("E-mail ou senha incorretos. Verifique seus dados e tente novamente.");
+      } else if (message.includes("Email not confirmed")) {
+        setError("Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada.");
+      } else if (message.includes("Too many requests")) {
+        setError("Muitas tentativas de login. Aguarde alguns minutos e tente novamente.");
+      } else {
+        setError("Não foi possível realizar o login. Tente novamente.");
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -33,27 +49,13 @@ export const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="mb-6 p-4 rounded-2xl bg-slate-800/60 border border-slate-700 space-y-2">
-          <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" /> Acesso Rápido de Demonstração
+        {/* Error Message */}
+        {error && (
+          <div className="mb-5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+            <span className="text-xs text-red-300 leading-relaxed">{error}</span>
           </div>
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            <button
-              onClick={() => handleQuickDemo("tenant")}
-              className="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold text-white transition flex items-center justify-center gap-1.5"
-            >
-              <Scissors className="w-3.5 h-3.5 text-amber-400" />
-              <span>Dono da Barbearia</span>
-            </button>
-            <button
-              onClick={() => handleQuickDemo("admin")}
-              className="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-xs font-bold text-white transition flex items-center justify-center gap-1.5"
-            >
-              <ShieldAlert className="w-3.5 h-3.5 text-red-400" />
-              <span>SaaS Admin</span>
-            </button>
-          </div>
-        </div>
+        )}
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
@@ -66,7 +68,8 @@ export const LoginPage: React.FC = () => {
                 placeholder="seu@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-amber-500"
+                disabled={loading}
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-amber-500 disabled:opacity-50"
               />
             </div>
           </div>
@@ -86,17 +89,28 @@ export const LoginPage: React.FC = () => {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-amber-500"
+                disabled={loading}
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-amber-500 disabled:opacity-50"
               />
             </div>
           </div>
 
           <button
             type="submit"
-            className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2"
+            disabled={loading}
+            className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm transition shadow-lg shadow-amber-500/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span>Entrar na Conta</span>
-            <ArrowRight className="w-4 h-4" />
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Entrando...</span>
+              </>
+            ) : (
+              <>
+                <span>Entrar na Conta</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
         </form>
 

@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { TenantLayout } from "./components/layout/TenantLayout";
 import { AdminLayout } from "./components/layout/AdminLayout";
+import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { Home } from "./pages/Home";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { RegisterPage } from "./pages/auth/RegisterPage";
@@ -31,8 +32,14 @@ function App() {
         <Route path="/auth/login" element={<LoginPage />} />
         <Route path="/auth/register" element={<RegisterPage />} />
 
-        {/* Nível 2: Backoffice da Barbearia (Tenant) */}
-        <Route element={<TenantLayout />}>
+        {/* Backoffice da Barbearia (Tenant) — requer autenticação */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <TenantLayout />
+            </ProtectedRoute>
+          }
+        >
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/agenda" element={<AgendaPage />} />
           <Route path="/clientes" element={<ClientsPage />} />
@@ -45,8 +52,15 @@ function App() {
           <Route path="/configuracoes/assinatura" element={<SettingsPage />} />
         </Route>
 
-        {/* Nível 1: Plataforma SaaS Admin (MetricBarber Super Admin) */}
-        <Route path="/admin" element={<AdminLayout />}>
+        {/* Painel Administrativo SaaS (Super Admin) — requer autenticação + is_platform_admin */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute requireAdmin>
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="dashboard" element={<AdminDashboardPage />} />
           <Route path="tenants" element={<TenantsListPage />} />
@@ -56,7 +70,7 @@ function App() {
           <Route path="support" element={<AdminDashboardPage />} />
         </Route>
 
-        {/* Nível 3: Chat Público de Agendamento (Mobile-First) */}
+        {/* Chat Público de Agendamento (Mobile-First) */}
         <Route path="/:slug" element={<PublicChat />} />
         <Route path="/:slug/agendamento/:id" element={<PublicChat />} />
 
