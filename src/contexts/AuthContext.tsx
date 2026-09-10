@@ -181,7 +181,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       });
 
-      // Fallback de segurança: se os memberships vieram sem o objeto tenant (ex: cache de esquema ou join nulo), busca direto em tenants
+      // Fallback de segurança 1: se os memberships vieram sem o objeto tenant (ex: join nulo por RLS), busca direto em tenants
       const missingTenantIds = memberships
         .filter((m) => !m.tenant?.id && m.tenant_id)
         .map((m) => m.tenant_id);
@@ -203,6 +203,85 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         } catch (fallbackErr) {
           console.warn("Aviso ao buscar tenants diretamente como fallback:", fallbackErr);
+        }
+      }
+
+      // Fallback de segurança 2: Se memberships ainda estiver vazio, tentar localizar tenant ativo via:
+      // a) Professionals vinculados ao user_id
+      // b) mb_active_tenant_id armazenado no localStorage
+      // c) Tenants com o mesmo e-mail do usuário autenticado
+      if (memberships.length === 0) {
+        let discoveredTenant: TenantInfo | null = null;
+
+        // a) Verificar se o usuário está cadastrado em professionals
+        try {
+          const { data: proRecord } = await (supabase.from("professionals") as any)
+            .select("tenant_id")
+            .eq("user_id", userId)
+            .limit(1)
+            .maybeSingle();
+
+          if (proRecord?.tenant_id) {
+            const { data: tData } = await (supabase.from("tenants") as any)
+              .select("id, slug, name, trade_name, phone, email, status, trial_ends_at, primary_color, secondary_color, logo_url, address_street, address_number, address_neighborhood, address_city, address_state, address_zip_code, settings, created_at, updated_at")
+              .eq("id", proRecord.tenant_id)
+              .maybeSingle();
+            if (tData) discoveredTenant = tData as TenantInfo;
+          }
+        } catch (proErr) {
+          console.warn("Aviso ao buscar tenant via professionals:", proErr);
+        }
+
+        // b) Se não achou, tentar pelo ID salvo no localStorage
+        if (!discoveredTenant) {
+          const localSavedId = localStorage.getItem("mb_active_tenant_id");
+          if (localSavedId && localSavedId !== "undefined" && localSavedId !== "null") {
+            try {
+              const { data: tData } = await (supabase.from("tenants") as any)
+                .select("id, slug, name, trade_name, phone, email, status, trial_ends_at, primary_color, secondary_color, logo_url, address_street, address_number, address_neighborhood, address_city, address_state, address_zip_code, settings, created_at, updated_at")
+                .eq("id", localSavedId)
+                .maybeSingle();
+              if (tData) discoveredTenant = tData as TenantInfo;
+            } catch {}
+          }
+        }
+
+        // c) Se não achou, tentar por e-mail do usuário no cadastro de tenants
+        if (!discoveredTenant && profile?.email) {
+          try {
+            const { data: tData } = await (supabase.from("tenants") as any)
+              .select("id, slug, name, trade_name, phone, email, status, trial_ends_at, primary_color, secondary_color, logo_url, address_street, address_number, address_neighborhood, address_city, address_state, address_zip_code, settings, created_at, updated_at")
+              .eq("email", profile.email)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (tData) discoveredTenant = tData as TenantInfo;
+          } catch {}
+        }
+
+        if (discoveredTenant) {
+          const synthMembership: TenantMembership = {
+            id: `mem_${discoveredTenant.id}_${userId}`,
+            tenant_id: discoveredTenant.id,
+            role: "owner",
+            is_active: true,
+            tenant: discoveredTenant,
+          };
+          memberships = [synthMembership];
+
+          // Auto-reparar tenant_users de forma assíncrona
+          (supabase.from("tenant_users") as any)
+            .upsert(
+              {
+                tenant_id: discoveredTenant.id,
+                user_id: userId,
+                role: "owner",
+                is_active: true,
+              },
+              { onConflict: "tenant_id,user_id" }
+            )
+            .then(() => {})
+            .catch(() => {});
         }
       }
 

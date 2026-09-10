@@ -135,6 +135,13 @@ export const TenantOnboardingPage: React.FC = () => {
   const [createdSlug, setCreatedSlug] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Se o usuário já possui barbearia cadastrada e ativa, redirecionar diretamente para o Dashboard
+  useEffect(() => {
+    if (!loading && !sessionChecking && tenant?.id && !submitting) {
+      navigate("/dashboard", { replace: true });
+    }
+  }, [loading, sessionChecking, tenant?.id, submitting, navigate]);
+
   // Auto-gerar slug a partir do nome caso o usuário não tenha editado manualmente
   useEffect(() => {
     if (!slugManuallyEdited && name) {
@@ -493,13 +500,21 @@ export const TenantOnboardingPage: React.FC = () => {
 
       // Atualizar o contexto global imediatamente com os novos dados
       const freshData = await refreshUserData(authenticatedUser.id);
-      if (freshData?.tenant?.id) {
-        localStorage.setItem("mb_active_tenant_id", freshData.tenant.id);
+      const activeId = freshData?.tenant?.id || targetTenantId;
+      if (activeId) {
+        localStorage.setItem("mb_active_tenant_id", activeId);
       }
 
-      // Exibir tela de sucesso com link gerado
-      setCreatedSlug(cleanSlug);
+      const fromParam = (location.state as any)?.from?.pathname || sessionStorage.getItem("mb_auth_from");
+      sessionStorage.removeItem("mb_auth_from");
+
       setSubmitting(false);
+
+      if (fromParam && !fromParam.startsWith("/auth") && !fromParam.startsWith("/onboarding") && fromParam !== "/") {
+        navigate(fromParam, { replace: true });
+      } else {
+        navigate("/dashboard?welcome=true", { replace: true });
+      }
     } catch (err: any) {
       console.error("Erro ao salvar barbearia:", err);
       setError(err?.message || "Não foi possível cadastrar a barbearia. Tente novamente.");

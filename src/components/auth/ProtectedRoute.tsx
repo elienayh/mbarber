@@ -62,19 +62,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     }
   }
 
-  // 4. Regra B: Dono sem barbearia / dados incompletos
+  // 4. Regra B: Usuário sem barbearia
   if (!allowIncompleteTenant) {
+    const hasActiveTenant = Boolean(tenant?.id);
     const activeMemberships = (memberships || []).filter((m) => m.is_active);
 
-    // Sem nenhuma barbearia vinculada
-    if (activeMemberships.length === 0) {
-      if (location.pathname !== "/onboarding/barbearia") {
-        return <Navigate to="/onboarding/barbearia" state={{ from: location }} replace />;
-      }
-    }
-
-    // Dono com dados da barbearia pendentes
-    if (tenantMembership?.role === "owner" && !isTenantComplete) {
+    // Sem nenhuma barbearia vinculada e sem tenant ativo
+    if (activeMemberships.length === 0 && !hasActiveTenant) {
       if (location.pathname !== "/onboarding/barbearia") {
         return <Navigate to="/onboarding/barbearia" state={{ from: location }} replace />;
       }

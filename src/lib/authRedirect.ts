@@ -82,27 +82,24 @@ export function validateSlugSyntax(slug: string): { valid: boolean; error?: stri
 
 /**
  * Verifica se o perfil do usuário possui todos os campos obrigatórios preenchidos
- * Obrigatórios: Nome completo e Telefone/WhatsApp
+ * Obrigatório mínimo: Nome completo válido
  */
 export function isProfileComplete(profile: UserProfile | null | undefined): boolean {
   if (!profile) return false;
   const hasName = Boolean(profile.full_name && profile.full_name.trim().length >= 2);
-  const rawPhone = profile.phone ? profile.phone.replace(/\D/g, "") : "";
-  const hasPhone = rawPhone.length >= 10;
-  return hasName && hasPhone;
+  return hasName;
 }
 
 /**
  * Verifica se a barbearia possui dados mínimos configurados
- * Obrigatórios: Nome, Slug e Telefone comercial
+ * Obrigatórios: ID ou Nome e Slug válidos
  */
 export function isTenantComplete(tenant: TenantInfo | null | undefined): boolean {
   if (!tenant) return false;
+  const hasId = Boolean(tenant.id);
   const hasName = Boolean(tenant.name && tenant.name.trim().length >= 2);
   const hasSlug = Boolean(tenant.slug && tenant.slug.trim().length >= 3 && !RESERVED_SLUGS.includes(tenant.slug));
-  const rawPhone = tenant.phone ? tenant.phone.replace(/\D/g, "") : "";
-  const hasPhone = rawPhone.length >= 10;
-  return hasName && hasSlug && hasPhone;
+  return (hasId && hasName) || (hasName && hasSlug);
 }
 
 /**
@@ -138,25 +135,12 @@ export function determineNextRoute({
   // 3. Regra D e B: Verificar memberships ativos
   const activeMemberships = (memberships || []).filter((m) => m.is_active);
 
-  // Se não possuir nenhum membership ativo:
+  // Se não possuir nenhum membership ativo e nenhum tenant ativo:
   // Usuário é novo dono que precisa configurar a barbearia inicial
-  if (activeMemberships.length === 0) {
+  if (activeMemberships.length === 0 && !activeTenant?.id) {
     return "/onboarding/barbearia";
   }
 
-  // Determinar o membership em uso
-  const currentMembership =
-    activeMemberships.find((m) => m.tenant_id === activeTenant?.id) || activeMemberships[0];
-
-  // Regra B: Se for dono (owner) e a barbearia não estiver com dados completos
-  if (currentMembership.role === "owner") {
-    const targetTenant = activeTenant || currentMembership.tenant || null;
-    if (!isTenantComplete(targetTenant)) {
-      return "/onboarding/barbearia";
-    }
-  }
-
-  // Regra C e D: Perfil + Barbearia configurados OU profissional convidado com perfil completo
   // Preservar 'from' se válido e não for rota pública/auth
   if (
     intendedDestination &&
