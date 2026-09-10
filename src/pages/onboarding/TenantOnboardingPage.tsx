@@ -30,7 +30,6 @@ export const TenantOnboardingPage: React.FC = () => {
   const { user, profile, tenant, refreshUserData } = useAuth();
 
   const [name, setName] = useState(tenant?.name || "");
-  const [tradeName, setTradeName] = useState(tenant?.trade_name || "");
   const [slug, setSlug] = useState(tenant?.slug || "");
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(Boolean(tenant?.slug));
   const [phone, setPhone] = useState(tenant?.phone || profile?.phone || "");
@@ -41,7 +40,7 @@ export const TenantOnboardingPage: React.FC = () => {
   const [city, setCity] = useState(tenant?.address_city || "São Paulo");
   const [state, setState] = useState(tenant?.address_state || "SP");
   const [zipCode, setZipCode] = useState(tenant?.address_zip_code || "");
-  const [logoUrl, setLogoUrl] = useState(tenant?.logo_url || "");
+  const [cepLoading, setCepLoading] = useState(false);
 
   const [slugStatus, setSlugStatus] = useState<{
     checking: boolean;
@@ -65,6 +64,25 @@ export const TenantOnboardingPage: React.FC = () => {
       setSlug(generated);
     }
   }, [name, slugManuallyEdited]);
+
+  // Busca automática de endereço por CEP (ViaCEP)
+  const lookupCep = async (cleanCep: string) => {
+    setCepLoading(true);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+      const data = await response.json();
+      if (!data.erro) {
+        if (data.logradouro) setStreet(data.logradouro);
+        if (data.bairro) setNeighborhood(data.bairro);
+        if (data.localidade) setCity(data.localidade);
+        if (data.uf) setState(data.uf);
+      }
+    } catch (err) {
+      console.warn("Erro ao consultar ViaCEP:", err);
+    } finally {
+      setCepLoading(false);
+    }
+  };
 
   // Verificar disponibilidade do slug
   const checkSlugAvailability = useCallback(
@@ -152,14 +170,20 @@ export const TenantOnboardingPage: React.FC = () => {
     setPhone(value);
   };
 
-  // Máscara de CEP
+  // Máscara de CEP com consulta automática de endereço
   const handleZipCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, "");
-    if (value.length > 8) value = value.slice(0, 8);
-    if (value.length > 5) {
-      value = `${value.slice(0, 5)}-${value.slice(5)}`;
+    const raw = e.target.value.replace(/\D/g, "");
+    if (raw.length > 8) return;
+
+    let formatted = raw;
+    if (raw.length > 5) {
+      formatted = `${raw.slice(0, 5)}-${raw.slice(5)}`;
     }
-    setZipCode(value);
+    setZipCode(formatted);
+
+    if (raw.length === 8) {
+      lookupCep(raw);
+    }
   };
 
   const handleSlugInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,7 +236,7 @@ export const TenantOnboardingPage: React.FC = () => {
         const { error: updateError } = await (supabase.from("tenants") as any)
           .update({
             name: cleanName,
-            trade_name: tradeName.trim() || cleanName,
+            trade_name: cleanName,
             slug: cleanSlug,
             phone: phone.trim(),
             email: email.trim() || null,
@@ -222,7 +246,6 @@ export const TenantOnboardingPage: React.FC = () => {
             address_city: city.trim() || null,
             address_state: state || null,
             address_zip_code: zipCode.trim() || null,
-            logo_url: logoUrl.trim() || null,
             updated_at: new Date().toISOString(),
           })
           .eq("id", tenant.id);
@@ -234,7 +257,7 @@ export const TenantOnboardingPage: React.FC = () => {
           "create_tenant_for_current_user",
           {
             p_name: cleanName,
-            p_trade_name: tradeName.trim() || cleanName,
+            p_trade_name: cleanName,
             p_slug: cleanSlug,
             p_phone: phone.trim(),
             p_email: email.trim() || null,
@@ -244,7 +267,7 @@ export const TenantOnboardingPage: React.FC = () => {
             p_address_city: city.trim() || null,
             p_address_state: state || null,
             p_address_zip_code: zipCode.trim() || null,
-            p_logo_url: logoUrl.trim() || null,
+            p_logo_url: null,
           }
         );
 
@@ -374,36 +397,20 @@ export const TenantOnboardingPage: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Seção 1: Identificação e Link Público */}
           <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-200 mb-1">
-                  Nome da Barbearia <span className="text-red-400">*</span>
-                </label>
-                <div className="relative">
-                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: Barbearia Navalha & Estilo"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    disabled={submitting}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition shadow-inner"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-200 mb-1">
-                  Nome Fantasia / Público
-                </label>
+            <div>
+              <label className="block text-xs font-semibold text-slate-200 mb-1">
+                Nome da Barbearia <span className="text-red-400">*</span>
+              </label>
+              <div className="relative">
+                <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
                   type="text"
-                  placeholder="Ex: Navalha & Estilo"
-                  value={tradeName}
-                  onChange={(e) => setTradeName(e.target.value)}
+                  required
+                  placeholder="Ex: Barbearia Navalha & Estilo"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   disabled={submitting}
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition shadow-inner"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition shadow-inner"
                 />
               </div>
             </div>
@@ -559,7 +566,14 @@ export const TenantOnboardingPage: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">CEP</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-400">CEP</label>
+                    {cepLoading && (
+                      <span className="text-[10px] text-accent flex items-center gap-1 font-medium">
+                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> Buscando...
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     placeholder="00000-000"
@@ -571,21 +585,6 @@ export const TenantOnboardingPage: React.FC = () => {
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Logo URL (Opcional) */}
-          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800">
-            <label className="block text-xs font-semibold text-slate-200 mb-1">
-              Logo da Barbearia (Opcional)
-            </label>
-            <input
-              type="url"
-              placeholder="Link para a imagem do logotipo (PNG, JPG ou SVG)"
-              value={logoUrl}
-              onChange={(e) => setLogoUrl(e.target.value)}
-              disabled={submitting}
-              className="w-full px-4 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent"
-            />
           </div>
 
           <button
