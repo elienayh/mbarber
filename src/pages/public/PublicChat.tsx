@@ -75,7 +75,9 @@ export const PublicChat: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [slotsErrorMessage, setSlotsErrorMessage] = useState<string | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingErrorMessage, setBookingErrorMessage] = useState<string | null>(null);
 
   // Estados para identificação inicial por telefone (Fonte Primária)
   const [phoneInput, setPhoneInput] = useState<string>(() => {
@@ -101,259 +103,72 @@ export const PublicChat: React.FC = () => {
         return;
       }
 
-      let foundTenant: TenantInfo | null = null;
-      let foundServices: Service[] = [];
-      let foundProfessionals: Professional[] = [];
+      const cleanSlug = slug.toLowerCase().trim();
 
-      // 1. Try Supabase RPC get_public_catalog
-      if (isSupabaseConfigured) {
-        try {
-          const { data: catalog, error: tenantError } = await (supabase.rpc as any)("get_public_catalog", { p_slug: slug });
-          if (!tenantError && catalog?.tenant) {
-            foundTenant = catalog.tenant as TenantInfo;
-            foundServices = (catalog.services || []) as Service[];
-            foundProfessionals = (catalog.professionals || []) as Professional[];
+      // 1. Identificar o tenant exclusivamente a partir do slug da URL
+      const { data: dbTenant, error: tenantErr } = await (supabase.from("tenants") as any)
+        .select(
+          "id, slug, name, trade_name, phone, logo_url, address_street, address_number, address_neighborhood, address_city, address_state, address_zip_code, settings, primary_color, status"
+        )
+        .eq("slug", cleanSlug)
+        .maybeSingle();
 
-            // Hydrate extra settings if RPC returned partial fields
-            try {
-              const { data: extraTenant } = await (supabase.from("tenants") as any)
-                .select("logo_url, settings, address_zip_code, address_street, address_number, address_neighborhood, address_city, address_state")
-                .eq("id", foundTenant.id)
-                .maybeSingle();
-
-              if (extraTenant) {
-                foundTenant = {
-                  ...foundTenant,
-                  logo_url: extraTenant.logo_url || foundTenant.logo_url,
-                  settings: extraTenant.settings || foundTenant.settings,
-                  address_street: extraTenant.address_street || foundTenant.address_street,
-                  address_number: extraTenant.address_number || foundTenant.address_number,
-                  address_neighborhood: extraTenant.address_neighborhood || foundTenant.address_neighborhood,
-                  address_city: extraTenant.address_city || foundTenant.address_city,
-                  address_state: extraTenant.address_state || foundTenant.address_state,
-                  address_zip_code: extraTenant.address_zip_code || foundTenant.address_zip_code,
-                };
-              }
-            } catch (extraErr) {
-              console.warn("Extra tenant fetch error:", extraErr);
-            }
-          }
-        } catch (rpcErr) {
-          console.warn("RPC catalog fetch error:", rpcErr);
-        }
-
-        // 2. Fallback: direct query on tenants table if RPC didn't return
-        if (!foundTenant) {
-          try {
-            const { data: directTenant } = await (supabase.from("tenants") as any)
-              .select("id, slug, name, trade_name, phone, logo_url, address_street, address_number, address_neighborhood, address_city, address_state, address_zip_code, settings, primary_color")
-              .eq("slug", slug)
-              .maybeSingle();
-
-            if (directTenant) {
-              foundTenant = directTenant as TenantInfo;
-            }
-          } catch (directErr) {
-            console.warn("Direct tenant fetch error:", directErr);
-          }
-        }
+      if (tenantErr) {
+        console.error("Erro ao buscar tenant por slug no Supabase:", tenantErr);
+        setError("Erro ao carregar dados da barbearia. Tente novamente mais tarde.");
+        setLoading(false);
+        return;
       }
 
-      // 3. Fallback: Check local storage cache from SettingsPage and AuthContext
-      if (!foundTenant) {
-        try {
-          const cachedCatalogRaw = localStorage.getItem(`mb_public_catalog_${slug}`) || localStorage.getItem("mb_public_catalog_active");
-          const activeTenantRaw = localStorage.getItem("mb_active_tenant");
-
-          if (cachedCatalogRaw) {
-            const cachedCatalog = JSON.parse(cachedCatalogRaw);
-            if (cachedCatalog?.tenant) {
-              foundTenant = cachedCatalog.tenant;
-            }
-          } else if (activeTenantRaw) {
-            const activeTenant = JSON.parse(activeTenantRaw);
-            if (activeTenant?.slug === slug || slug === "vintage-barber") {
-              foundTenant = activeTenant;
-            }
-          }
-        } catch (cacheErr) {
-          console.warn("Local cache check error:", cacheErr);
-        }
+      if (!dbTenant) {
+        setError("Barbearia não encontrada. Verifique o link e tente novamente.");
+        setLoading(false);
+        return;
       }
 
-      // 4. If still no tenant found, create dynamic demo tenant for this slug
-      if (!foundTenant) {
-        foundTenant = {
-          id: "d0a80e1b-2615-46aa-bf73-9a40306ea001",
-          slug: slug,
-          name: "Barbearia " + slug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "),
-          trade_name: slug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" "),
-          phone: "(11) 98765-4321",
-          logo_url: null,
-          address_street: "Rua Augusta",
-          address_number: "1500",
-          address_neighborhood: "Consolação",
-          address_city: "São Paulo",
-          address_state: "SP",
-          address_zip_code: "01304-001",
-          primary_color: "#F28322",
-          settings: {
-            latitude: -23.5558,
-            longitude: -46.6583,
+      // 2. Carregar exclusivamente os serviços reais do tenant
+      const { data: dbServices, error: servicesErr } = await (supabase.from("services") as any)
+        .select("id, name, category, price_cents, duration_minutes, is_active")
+        .eq("tenant_id", dbTenant.id)
+        .eq("is_active", true)
+        .order("name");
+
+      if (servicesErr) {
+        console.warn("Aviso ao buscar serviços reais do tenant:", servicesErr);
+      }
+
+      // 3. Carregar exclusivamente os profissionais reais do tenant
+      const { data: dbPros, error: prosErr } = await (supabase.from("professionals") as any)
+        .select("id, name, nickname, color_hex, avatar_url, is_active, work_schedule")
+        .eq("tenant_id", dbTenant.id)
+        .eq("is_active", true)
+        .order("name");
+
+      if (prosErr) {
+        console.warn("Aviso ao buscar profissionais reais do tenant:", prosErr);
+      }
+
+      const realServices: Service[] = (dbServices || []).filter((s: any) => s.is_active !== false);
+      const realProfessionals: Professional[] = (dbPros || []).filter((p: any) => p.is_active !== false);
+
+      setTenant(dbTenant as TenantInfo);
+      setServices(realServices);
+
+      // Disponibilizar "Qualquer Barbeiro Disponível" apenas se existirem profissionais reais
+      if (realProfessionals.length > 0) {
+        setProfessionals([
+          {
+            id: "any",
+            name: "Qualquer Barbeiro Disponível",
+            nickname: "Primeiro horário livre",
+            color_hex: dbTenant.primary_color || "var(--accent)",
           },
-        };
+          ...realProfessionals,
+        ]);
+      } else {
+        setProfessionals([]);
       }
 
-      // Se houver personalizações salvas no localStorage (nome, logo, etc.), mescla com prioridade
-      try {
-        const customTenantRaw =
-          localStorage.getItem(`mb_custom_tenant_${foundTenant.id}`) ||
-          localStorage.getItem(`mb_settings_${foundTenant.id}`) ||
-          localStorage.getItem("mb_active_tenant");
-        if (customTenantRaw) {
-          const customParsed = JSON.parse(customTenantRaw);
-          foundTenant = {
-            ...foundTenant,
-            name: customParsed.name || customParsed.trade_name || foundTenant.name,
-            trade_name: customParsed.trade_name || customParsed.name || foundTenant.trade_name,
-            logo_url: customParsed.logo_url || foundTenant.logo_url,
-            phone: customParsed.phone || foundTenant.phone,
-            address_street: customParsed.address_street || foundTenant.address_street,
-            address_number: customParsed.address_number || foundTenant.address_number,
-            address_neighborhood: customParsed.address_neighborhood || foundTenant.address_neighborhood,
-            address_city: customParsed.address_city || foundTenant.address_city,
-            address_state: customParsed.address_state || foundTenant.address_state,
-            address_zip_code: customParsed.address_zip_code || foundTenant.address_zip_code,
-            settings: { ...((foundTenant.settings as any) || {}), ...((customParsed.settings as any) || {}) },
-          };
-        }
-      } catch {}
-
-      // 5. Carrega Serviços: busca no Supabase e mescla com TODOS os caches locais
-      const srvMap = new Map<string, Service>();
-      foundServices.forEach((s) => {
-        if ((s as any).is_active !== false) srvMap.set(s.id, s);
-      });
-
-      try {
-        if (foundTenant.id) {
-          const { data: dbServices } = await (supabase.from("services") as any)
-            .select("id, name, category, price_cents, duration_minutes, is_active")
-            .eq("tenant_id", foundTenant.id)
-            .eq("is_active", true);
-          if (dbServices && Array.isArray(dbServices)) {
-            dbServices.forEach((s) => srvMap.set(s.id, s));
-          }
-        }
-      } catch {}
-
-      const serviceStorageKeys = [
-        foundTenant.id ? `mb_services_${foundTenant.id}` : null,
-        slug ? `mb_services_${slug}` : null,
-        "mb_services_default",
-        "mb_services_vintage-barber",
-      ].filter(Boolean) as string[];
-
-      for (const sKey of serviceStorageKeys) {
-        try {
-          const raw = localStorage.getItem(sKey);
-          if (raw) {
-            const list = JSON.parse(raw);
-            if (Array.isArray(list)) {
-              list.forEach((s: any) => {
-                if (s.is_active !== false) {
-                  const existing = srvMap.get(s.id);
-                  srvMap.set(s.id, { ...existing, ...s });
-                }
-              });
-            }
-          }
-        } catch {}
-      }
-
-      let finalServices = Array.from(srvMap.values());
-      if (finalServices.length === 0) {
-        finalServices = [
-          { id: "s1", name: "Corte Tradicional", category: "cabelo", price_cents: 4500, duration_minutes: 30 },
-          { id: "s2", name: "Barba Completa com Toalha Quente", category: "barba", price_cents: 3500, duration_minutes: 30 },
-          { id: "s3", name: "Combo Cabelo + Barba Premium", category: "combo", price_cents: 7500, duration_minutes: 60 },
-          { id: "s4", name: "Acabamento & Pezinho", category: "cabelo", price_cents: 2000, duration_minutes: 15 },
-        ];
-      }
-
-      // 6. Carrega Profissionais: busca no Supabase e mescla com TODOS os caches locais
-      // Isso garante que qualquer barbeiro criado em 'Equipe' apareça imediatamente no chat
-      const proMap = new Map<string, Professional>();
-      foundProfessionals.forEach((p) => {
-        if ((p as any).is_active !== false) proMap.set(p.id, p);
-      });
-
-      try {
-        if (foundTenant.id) {
-          const { data: dbPros } = await (supabase.from("professionals") as any)
-            .select("id, name, nickname, color_hex, avatar_url, is_active, work_schedule")
-            .eq("tenant_id", foundTenant.id)
-            .eq("is_active", true);
-          if (dbPros && Array.isArray(dbPros)) {
-            dbPros.forEach((p) => proMap.set(p.id, p));
-          }
-        }
-      } catch {}
-
-      const proStorageKeys = [
-        foundTenant.id ? `mb_professionals_${foundTenant.id}` : null,
-        slug ? `mb_professionals_${slug}` : null,
-        "mb_professionals_default",
-        "mb_professionals_vintage-barber",
-      ].filter(Boolean) as string[];
-
-      for (const pKey of proStorageKeys) {
-        try {
-          const raw = localStorage.getItem(pKey);
-          if (raw) {
-            const list = JSON.parse(raw);
-            if (Array.isArray(list)) {
-              list.forEach((p: any) => {
-                if (p.is_active !== false) {
-                  const existing = proMap.get(p.id);
-                  proMap.set(p.id, { ...existing, ...p });
-                }
-              });
-            }
-          }
-        } catch {}
-      }
-
-      // Verifica também catalogo publico salvo
-      try {
-        const catRaw = localStorage.getItem(`mb_public_catalog_${slug}`) || localStorage.getItem("mb_public_catalog_active");
-        if (catRaw) {
-          const parsedCat = JSON.parse(catRaw);
-          if (Array.isArray(parsedCat?.professionals)) {
-            parsedCat.professionals.forEach((p: any) => {
-              if (p.is_active !== false) {
-                const existing = proMap.get(p.id);
-                proMap.set(p.id, { ...existing, ...p });
-              }
-            });
-          }
-        }
-      } catch {}
-
-      let finalProfessionals = Array.from(proMap.values());
-      if (finalProfessionals.length === 0) {
-        finalProfessionals = [
-          { id: "p1", name: "Rodrigo 'Navalha' Santos", nickname: "Mestre Barbeiro", color_hex: "#3B82F6" },
-          { id: "p2", name: "Lucas Ferreira", nickname: "Especialista em Degradê", color_hex: "#10B981" },
-        ];
-      }
-
-      setTenant(foundTenant);
-      setServices(finalServices);
-      setProfessionals([
-        { id: "any", name: "Qualquer Barbeiro Disponível", nickname: "Mais rápido", color_hex: foundTenant.primary_color || "var(--accent)" },
-        ...finalProfessionals,
-      ]);
       setLoading(false);
     };
 
@@ -533,59 +348,24 @@ export const PublicChat: React.FC = () => {
     if (!tenant || !selectedService || !selectedDate || !selectedProfessional) return;
     const loadSlots = async () => {
       setSlotsLoading(true);
-      setError(null);
+      setSlotsErrorMessage(null);
 
-      // Bloqueios de horário (pausa, almoço, compromisso, folga)
+      // Bloqueios de horário reais cadastrados para este tenant
       let activeBlocks: any[] = [];
       try {
-        const { data: dbBlocks } = await (supabase.from("schedule_blocks") as any)
-          .select("*")
+        const { data: dbBlocks, error: blocksErr } = await (supabase.from("schedule_blocks") as any)
+          .select("id, professional_id, start_date, start_time, end_time, is_all_day, title")
           .eq("tenant_id", tenant.id)
-          .gte("start_date", selectedDate)
-          .lte("start_date", selectedDate);
+          .eq("start_date", selectedDate);
 
-        if (dbBlocks && Array.isArray(dbBlocks)) {
+        if (blocksErr) {
+          console.warn("Aviso ao buscar schedule_blocks:", blocksErr);
+        } else if (dbBlocks && Array.isArray(dbBlocks)) {
           activeBlocks = dbBlocks;
         }
       } catch (err) {
-        console.warn("Supabase schedule_blocks query error in chat:", err);
+        console.warn("Erro ao consultar schedule_blocks:", err);
       }
-
-      // Merge com bloqueios em cache local
-      try {
-        const keys = [
-          `mb_schedule_blocks_${tenant.id}`,
-          tenant.slug ? `mb_schedule_blocks_${tenant.slug}` : null,
-          "mb_schedule_blocks_default",
-          "mb_schedule_blocks_vintage-barber",
-        ].filter(Boolean) as string[];
-
-        for (const k of keys) {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              const bMap = new Map();
-              activeBlocks.forEach((b) => bMap.set(b.id, b));
-              parsed.forEach((b: any) => {
-                if (b.date === selectedDate) {
-                  bMap.set(b.id, {
-                    id: b.id,
-                    professional_id: b.barberId,
-                    start_date: b.date,
-                    start_time: b.startTime ? `${b.startTime}:00` : null,
-                    end_time: b.endTime ? `${b.endTime}:00` : null,
-                    is_all_day: b.isAllDay,
-                    title: b.title,
-                  });
-                }
-              });
-              activeBlocks = Array.from(bMap.values());
-              break;
-            }
-          }
-        }
-      } catch {}
 
       // Verifica se há dia inteiro bloqueado para este profissional ou todos
       const isDayBlocked = activeBlocks.some(
@@ -635,51 +415,27 @@ export const PublicChat: React.FC = () => {
         });
         if (isBlocked) return false;
 
-        // 3. Checa agendamentos salvos localmente
-        try {
-          const localAptsRaw = localStorage.getItem(`mb_appointments_${tenant.id}_${selectedDate}`);
-          if (localAptsRaw) {
-            const localApts = JSON.parse(localAptsRaw);
-            if (Array.isArray(localApts)) {
-              const conflict = localApts.some(
-                (a: any) =>
-                  a.time === timeStr &&
-                  (selectedProfessional.id === "any" || a.barberId === selectedProfessional.id)
-              );
-              if (conflict) return false;
-            }
-          }
-        } catch {}
-
         return true;
       };
 
-      if (!isSupabaseConfigured) {
-        // Horários base demonstrativos
-        const baseSlots = [
-          "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
-          "13:00", "13:30", "14:00", "14:30", "15:00", "15:30",
-          "16:00", "16:30", "17:00", "17:30", "18:00", "18:30", "19:00", "19:30"
-        ];
-        const validTimes = baseSlots.filter(isSlotAllowed);
-        const groups = new Map<string, string[]>();
-        validTimes.forEach((time) => {
-          const hour = Number(time.slice(0, 2));
-          const period = hour < 12 ? "Manhã" : hour < 18 ? "Tarde" : "Noite";
-          groups.set(period, [...(groups.get(period) || []), time]);
-        });
-        setAvailableSlots(Array.from(groups, ([period, times]) => ({ period, times })));
+      const profIdParam =
+        selectedProfessional.id === "any" || !selectedProfessional.id ? null : selectedProfessional.id;
+
+      const { data, error: slotsError } = await (supabase.rpc as any)("get_available_slots", {
+        p_tenant_id: tenant.id,
+        p_professional_id: profIdParam,
+        p_service_id: selectedService.id,
+        p_date: selectedDate,
+      });
+
+      if (slotsError) {
+        console.error("Erro na RPC get_available_slots:", slotsError);
+        setSlotsErrorMessage("Falha técnica ao consultar os horários. Tente novamente mais tarde.");
+        setAvailableSlots([]);
         setSlotsLoading(false);
         return;
       }
 
-      const { data, error: slotsError } = await (supabase.rpc as any)("get_available_slots", {
-        p_tenant_id: tenant.id,
-        p_professional_id: selectedProfessional.id === "any" ? null : selectedProfessional.id,
-        p_service_id: selectedService.id,
-        p_date: selectedDate,
-      });
-      if (slotsError) setError("Não foi possível carregar os horários.");
       const groups = new Map<string, string[]>();
       (data || [])
         .filter((slot: { is_available: boolean; slot_time: string }) => slot.is_available && isSlotAllowed(slot.slot_time.slice(0, 5)))
@@ -689,62 +445,22 @@ export const PublicChat: React.FC = () => {
           const period = hour < 12 ? "Manhã" : hour < 18 ? "Tarde" : "Noite";
           groups.set(period, [...(groups.get(period) || []), time]);
         });
+
       setAvailableSlots(Array.from(groups, ([period, times]) => ({ period, times })));
       setSlotsLoading(false);
     };
+
     loadSlots();
   }, [tenant, selectedService, selectedDate, selectedProfessional]);
 
   const handleConfirmBooking = async () => {
     if (bookingLoading) return;
     if (!tenant || !selectedService || !selectedDate || !selectedTime || customerName.trim().length < 2 || customerPhone.length < 8) {
-      setError("Informe seu nome e um WhatsApp válido para confirmar.");
+      setBookingErrorMessage("Informe seu nome e um WhatsApp válido para confirmar.");
       return;
     }
     setBookingLoading(true);
-    setError(null);
-
-    if (!isSupabaseConfigured) {
-      // Simulação instantânea de confirmação de agendamento em preview
-      const demoCode = "MB-" + Math.floor(1000 + Math.random() * 9000);
-      try {
-        const aptKey = `mb_appointments_${tenant.id}_${selectedDate}`;
-        const existingAptsRaw = localStorage.getItem(aptKey);
-        const existingApts = existingAptsRaw ? JSON.parse(existingAptsRaw) : [];
-        const newApt = {
-          id: `demo_${Date.now()}`,
-          time: selectedTime,
-          client: customerName,
-          phone: customerPhone,
-          service: selectedService.name,
-          serviceId: selectedService.id,
-          barber: selectedProfessional.name,
-          barberId: selectedProfessional.id,
-          priceCents: selectedService.price_cents,
-          status: "confirmed",
-        };
-        localStorage.setItem(aptKey, JSON.stringify([...existingApts, newApt]));
-      } catch {}
-
-      // Disparar Notificação Push em Tempo Real para a Barbearia
-      broadcastNewAppointment({
-        tenantId: tenant.id,
-        customerName: customerName.trim(),
-        customerPhone: customerPhone.trim(),
-        serviceName: selectedService.name,
-        barberName: selectedProfessional.name,
-        barberId: selectedProfessional.id,
-        date: selectedDate,
-        time: selectedTime,
-        priceCents: selectedService.price_cents,
-        source: "chat",
-      });
-
-      setBookingId(demoCode);
-      setStep(6);
-      setBookingLoading(false);
-      return;
-    }
+    setBookingErrorMessage(null);
 
     const { data, error: bookingError } = await (supabase.rpc as any)("book_public_appointment", {
       p_slug: tenant.slug,
@@ -752,12 +468,13 @@ export const PublicChat: React.FC = () => {
       p_professional_id: selectedProfessional?.id && selectedProfessional.id !== "any" ? selectedProfessional.id : null,
       p_date: selectedDate,
       p_time: selectedTime,
-      p_customer_name: customerName,
-      p_customer_phone: customerPhone,
+      p_customer_name: customerName.trim(),
+      p_customer_phone: customerPhone.trim(),
       p_notes: null,
     });
 
     if (bookingError) {
+      console.error("Erro na RPC book_public_appointment:", bookingError);
       const msg = bookingError.message || "";
       if (
         msg.includes("prevent_barber_double_booking") ||
@@ -766,10 +483,10 @@ export const PublicChat: React.FC = () => {
         msg.includes("indisponível") ||
         msg.includes("conflict")
       ) {
-        setError("Este horário acabou de ser reservado por outro cliente. Por favor, selecione outro horário.");
+        setBookingErrorMessage("Este horário acabou de ser reservado por outro cliente. Por favor, selecione outro horário.");
         setStep(4);
       } else {
-        setError(msg || "Não foi possível concluir o agendamento. Tente novamente.");
+        setBookingErrorMessage(msg || "Não foi possível concluir o agendamento. Tente novamente.");
       }
       setBookingLoading(false);
       return;
@@ -1359,7 +1076,14 @@ export const PublicChat: React.FC = () => {
                     </div>
                   )}
 
-                  {!slotsLoading && availableSlots.length === 0 && (
+                  {!slotsLoading && slotsErrorMessage && (
+                    <div className="p-4 rounded-xl border border-red-500/20 bg-red-500/10 text-center text-xs text-red-300 space-y-1">
+                      <p className="font-semibold">Erro ao consultar horários.</p>
+                      <p className="text-[11px] text-slate-400">{slotsErrorMessage}</p>
+                    </div>
+                  )}
+
+                  {!slotsLoading && !slotsErrorMessage && availableSlots.length === 0 && (
                     <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/10 text-center text-xs text-amber-300 space-y-1">
                       <p className="font-semibold">Nenhum horário livre nesta data.</p>
                       <p className="text-[11px] text-slate-400">
@@ -1478,10 +1202,10 @@ export const PublicChat: React.FC = () => {
                   </div>
                 </div>
 
-                {error && (
+                {(bookingErrorMessage || error) && (
                   <div className="rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-[11px] p-2.5 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{error}</span>
+                    <span>{bookingErrorMessage || error}</span>
                   </div>
                 )}
 

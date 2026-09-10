@@ -117,7 +117,7 @@ export const RegisterPage: React.FC = () => {
           </div>
           <h2 className="text-2xl font-black text-white">Criar Nova Barbearia</h2>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full surface-accent-soft text-accent text-xs font-bold mt-2 border border-accent">
-            <Sparkles className="w-3.5 h-3.5" /> 14 dias de Trial Gratuito • Sem Cartão
+            <Sparkles className="w-3.5 h-3.5" /> 35 dias de Trial Gratuito • Sem Cartão
           </div>
         </div>
 
@@ -223,7 +223,7 @@ export const RegisterPage: React.FC = () => {
               </>
             ) : (
               <>
-                <span>Iniciar 14 Dias Grátis</span>
+                <span>Iniciar 35 Dias Grátis</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}

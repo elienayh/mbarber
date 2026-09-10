@@ -242,10 +242,10 @@ export const Home: React.FC = () => {
             {/* Dual CTAs */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 mb-10">
               <Link
-                to="/vintage-barber"
+                to="/simulacao"
                 className="w-full sm:w-auto px-7 py-4 rounded-xl bg-accent hover-bg-accent text-stone-950 font-extrabold text-sm sm:text-base transition shadow-xl shadow-accent flex items-center justify-center gap-2 group"
               >
-                <span>Agendar um Horário</span>
+                <span>Simular Agendamento de Horário</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Link>
             </div>
@@ -277,7 +277,7 @@ export const Home: React.FC = () => {
                   <div className="w-3 h-3 rounded-full bg-accent/30 border border-muted-dark/50" />
                   <div className="w-3 h-3 rounded-full bg-emerald-500/30 border border-emerald-500/50" />
                   <span className="ml-2 font-mono text-[11px] text-stone-500">
-                    mbarber.com.br/vintage-barber
+                    mbarber.com.br/simulacao
                   </span>
                 </div>
                 <div className="flex items-center gap-1 text-emerald-400 font-semibold text-[11px]">
@@ -301,7 +301,7 @@ export const Home: React.FC = () => {
                   </p>
                   <div className="pt-2 flex flex-wrap gap-3">
                     <Link
-                      to="/vintage-barber"
+                      to="/simulacao"
                       className="px-5 py-2.5 rounded-xl bg-accent text-stone-950 font-bold text-xs hover-bg-accent transition flex items-center gap-1.5"
                     >
                       <span>Simular Agendamento do Cliente</span>
@@ -504,10 +504,10 @@ export const Home: React.FC = () => {
 
                   {/* CTA inside mockup */}
                   <Link
-                    to="/vintage-barber"
+                    to="/simulacao"
                     className="block w-full py-2.5 text-center rounded-xl bg-accent hover-bg-accent text-stone-950 font-bold text-xs transition shadow"
                   >
-                    Testar Chat de Agendamento
+                    Simular Chat de Agendamento
                   </Link>
                 </div>
               </div>
@@ -884,15 +884,15 @@ export const Home: React.FC = () => {
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
-                to="/vintage-barber"
+                to="/simulacao"
                 className="w-full sm:w-auto px-8 py-4 rounded-xl bg-accent hover-bg-accent text-stone-950 font-black text-sm sm:text-base transition shadow-xl shadow-accent flex items-center justify-center gap-2"
               >
-                <span>Agendar Meu Horário</span>
+                <span>Simular Agendamento Agora</span>
                 <ArrowRight className="w-4 h-4" />
               </Link>
               <Link
                 to="/dashboard"
-                className="w-full sm:w-auto px-8 py-4 rounded-xl bg-stone-800 hover:bg-stone-700 text-white font-bold text-sm sm:text-base transition border border-stone-700"
+                className="w-full sm:w-auto px-8 py-4 rounded-xl bg-stone-800 hover-bg-stone-700 text-white font-bold text-sm sm:text-base transition border border-stone-700"
               >
                 <span>Acessar Painel da Barbearia</span>
               </Link>

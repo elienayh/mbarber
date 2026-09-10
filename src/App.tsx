@@ -24,6 +24,7 @@ import { TenantsListPage } from "./pages/admin/TenantsListPage";
 import { PlansPage } from "./pages/admin/PlansPage";
 import { AuditPage } from "./pages/admin/AuditPage";
 import { PublicChat } from "./pages/public/PublicChat";
+import { SimulationChat } from "./pages/public/SimulationChat";
 
 function App() {
   return (
@@ -31,6 +32,10 @@ function App() {
       <Routes>
         {/* Landing & Public Portal */}
         <Route path="/" element={<Home />} />
+
+        {/* Simulação Interativa (Sem vínculo com barbearia, dados fictícios) */}
+        <Route path="/simulacao" element={<SimulationChat />} />
+        <Route path="/simular" element={<SimulationChat />} />
 
         {/* Auth Routes */}
         <Route path="/auth/login" element={<LoginPage />} />

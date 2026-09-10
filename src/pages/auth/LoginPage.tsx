@@ -235,7 +235,7 @@ export const LoginPage: React.FC = () => {
         <div className="mt-6 text-center text-xs text-slate-400">
           Ainda não tem uma conta?{" "}
           <Link to="/auth/register" className="text-accent font-bold hover:underline">
-            Criar barbearia (14 dias grátis)
+            Criar barbearia (35 dias grátis)
           </Link>
         </div>
       </div>

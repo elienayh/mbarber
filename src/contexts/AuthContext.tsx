@@ -12,7 +12,13 @@ interface AuthContextType extends AuthState {
   signOut: () => Promise<void>;
   getRedirectPath: (intendedDestination?: string) => string;
   switchTenant: (tenantId: string) => void;
-  refreshUserData: () => Promise<void>;
+  refreshUserData: (explicitUserId?: string) => Promise<{
+    profile: UserProfile | null;
+    memberships: TenantMembership[];
+    tenantMembership: TenantMembership | null;
+    tenant: TenantInfo | null;
+    tenantRole: string | null;
+  } | null>;
   updateTenantState: (updated: Partial<TenantInfo>) => void;
   isProfileComplete: boolean;
   isTenantComplete: boolean;
@@ -117,13 +123,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error("Erro ao carregar memberships:", membershipsError);
       }
 
-      const memberships: TenantMembership[] = (rawMemberships || []).map((m: any) => ({
-        id: m.id,
-        tenant_id: m.tenant_id,
-        role: m.role,
-        is_active: m.is_active,
-        tenant: m.tenants as TenantInfo,
-      }));
+      const memberships: TenantMembership[] = (rawMemberships || []).map((m: any) => {
+        const tenantObj = Array.isArray(m.tenants) ? m.tenants[0] : m.tenants;
+        return {
+          id: m.id,
+          tenant_id: m.tenant_id,
+          role: m.role,
+          is_active: m.is_active,
+          tenant: tenantObj as TenantInfo,
+        };
+      });
 
       // Selecionar barbearia ativa respeitando preferência armazenada
       const savedTenantId = localStorage.getItem("mb_active_tenant_id");
@@ -160,19 +169,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const refreshUserData = useCallback(async () => {
-    if (!state.user) return;
-    const { profile, memberships, tenantMembership, tenant, tenantRole } =
-      await fetchUserData(state.user.id);
-    setState((prev) => ({
-      ...prev,
-      profile,
-      memberships,
-      tenantMembership,
-      tenant,
-      tenantRole,
-    }));
-  }, [state.user, fetchUserData]);
+  const refreshUserData = useCallback(
+    async (explicitUserId?: string): Promise<{
+      profile: UserProfile | null;
+      memberships: TenantMembership[];
+      tenantMembership: TenantMembership | null;
+      tenant: TenantInfo | null;
+      tenantRole: string | null;
+    } | null> => {
+      let targetUserId = explicitUserId || state.user?.id;
+      let authUser = state.user;
+
+      if (!targetUserId) {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user?.id) {
+          targetUserId = authData.user.id;
+          authUser = authData.user;
+        }
+      }
+
+      if (!targetUserId) return null;
+
+      const result = await fetchUserData(targetUserId);
+
+      setState((prev) => ({
+        ...prev,
+        user: authUser || prev.user,
+        profile: result.profile,
+        memberships: result.memberships,
+        tenantMembership: result.tenantMembership,
+        tenant: result.tenant,
+        tenantRole: result.tenantRole,
+      }));
+
+      return result;
+    },
+    [state.user, fetchUserData]
+  );
 
   const switchTenant = useCallback(
     (tenantId: string) => {

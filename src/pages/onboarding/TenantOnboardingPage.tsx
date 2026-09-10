@@ -15,6 +15,9 @@ import {
   Loader2,
   AlertCircle,
   Sparkles,
+  Lock,
+  Unlock,
+  Search,
 } from "lucide-react";
 import { sanitizeSlug, validateSlugSyntax } from "@/lib/authRedirect";
 
@@ -27,10 +30,23 @@ const BRAZILIAN_STATES = [
 export const TenantOnboardingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, profile, tenant, loading, refreshUserData } = useAuth();
+  const { user, profile, tenant, loading, refreshUserData, isTenantComplete } = useAuth();
 
   const [sessionChecking, setSessionChecking] = useState<boolean>(true);
   const [currentAuthUser, setCurrentAuthUser] = useState(user);
+
+  // Redirecionamento idempotente: se o usuário já possui barbearia completa, navega direto ao dashboard
+  useEffect(() => {
+    if (!loading && !sessionChecking && isTenantComplete) {
+      const fromParam = (location.state as any)?.from?.pathname || sessionStorage.getItem("mb_auth_from");
+      sessionStorage.removeItem("mb_auth_from");
+      if (fromParam && !fromParam.startsWith("/auth") && !fromParam.startsWith("/onboarding") && fromParam !== "/") {
+        navigate(fromParam, { replace: true });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
+    }
+  }, [loading, sessionChecking, isTenantComplete, navigate, location.state]);
 
   const [name, setName] = useState(tenant?.name || "");
   const [slug, setSlug] = useState(tenant?.slug || "");
@@ -40,10 +56,20 @@ export const TenantOnboardingPage: React.FC = () => {
   const [street, setStreet] = useState(tenant?.address_street || "");
   const [number, setNumber] = useState(tenant?.address_number || "");
   const [neighborhood, setNeighborhood] = useState(tenant?.address_neighborhood || "");
-  const [city, setCity] = useState(tenant?.address_city || "São Paulo");
-  const [state, setState] = useState(tenant?.address_state || "SP");
+  const [city, setCity] = useState(tenant?.address_city || "");
+  const [state, setState] = useState(tenant?.address_state || "");
   const [zipCode, setZipCode] = useState(tenant?.address_zip_code || "");
   const [cepLoading, setCepLoading] = useState(false);
+  const [isAddressUnlocked, setIsAddressUnlocked] = useState<boolean>(
+    Boolean(tenant?.address_zip_code && (tenant?.address_city || tenant?.address_street))
+  );
+  const [cepStatus, setCepStatus] = useState<{
+    status: "idle" | "loading" | "success" | "error";
+    message: string | null;
+  }>({
+    status: tenant?.address_zip_code ? "success" : "idle",
+    message: null,
+  });
 
   // Monitorar e validar sessão ativa do Supabase Auth para prevenir condições de corrida
   useEffect(() => {
@@ -117,20 +143,46 @@ export const TenantOnboardingPage: React.FC = () => {
     }
   }, [name, slugManuallyEdited]);
 
-  // Busca automática de endereço por CEP (ViaCEP)
+  // Busca automática de endereço por CEP (ViaCEP) e liberação dos campos
   const lookupCep = async (cleanCep: string) => {
+    if (cleanCep.length !== 8) {
+      setIsAddressUnlocked(false);
+      setCepStatus({ status: "idle", message: null });
+      return;
+    }
+
     setCepLoading(true);
+    setCepStatus({ status: "loading", message: "Buscando endereço pelo CEP..." });
+
     try {
       const response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
       const data = await response.json();
-      if (!data.erro) {
+
+      if (data.erro) {
+        setCepStatus({
+          status: "error",
+          message: "CEP não localizado nos Correios. Verifique o número digitado.",
+        });
+        setIsAddressUnlocked(false);
+      } else {
         if (data.logradouro) setStreet(data.logradouro);
         if (data.bairro) setNeighborhood(data.bairro);
         if (data.localidade) setCity(data.localidade);
         if (data.uf) setState(data.uf);
+
+        setIsAddressUnlocked(true);
+        setCepStatus({
+          status: "success",
+          message: `Endereço localizado: ${data.localidade} - ${data.uf}. Campos liberados para preenchimento!`,
+        });
       }
     } catch (err) {
       console.warn("Erro ao consultar ViaCEP:", err);
+      setCepStatus({
+        status: "error",
+        message: "Não foi possível consultar os Correios automaticamente. Campos liberados para preenchimento manual.",
+      });
+      setIsAddressUnlocked(true);
     } finally {
       setCepLoading(false);
     }
@@ -235,6 +287,12 @@ export const TenantOnboardingPage: React.FC = () => {
 
     if (raw.length === 8) {
       lookupCep(raw);
+    } else {
+      setIsAddressUnlocked(false);
+      setCepStatus({
+        status: "idle",
+        message: "Digite o CEP completo (8 dígitos) para buscar cidade e estado e liberar o restante do endereço.",
+      });
     }
   };
 
@@ -347,33 +405,58 @@ export const TenantOnboardingPage: React.FC = () => {
 
         if (updateError) throw updateError;
       } else {
-        // Criar novo tenant via RPC atômica
-        const { data: newTenantId, error: rpcError } = await (supabase.rpc as any)(
-          "create_tenant_for_current_user",
-          {
-            p_name: cleanName,
-            p_trade_name: cleanName,
-            p_slug: cleanSlug,
-            p_phone: phone.trim(),
-            p_email: email.trim() || null,
-            p_address_street: street.trim() || null,
-            p_address_number: number.trim() || null,
-            p_address_neighborhood: neighborhood.trim() || null,
-            p_address_city: city.trim() || null,
-            p_address_state: state || null,
-            p_address_zip_code: zipCode.trim() || null,
-            p_logo_url: null,
-          }
-        );
+        // Idempotência: verificar se o usuário já possui barbearia criada (ex: recarregamento ou retry)
+        const { data: existingMemberships } = await (supabase.from("tenant_users") as any)
+          .select("tenant_id, role")
+          .eq("user_id", authenticatedUser.id)
+          .eq("role", "owner")
+          .limit(1);
 
-        if (rpcError) throw rpcError;
-        if (newTenantId) {
-          localStorage.setItem("mb_active_tenant_id", newTenantId);
+        if (existingMemberships && existingMemberships.length > 0) {
+          const existingTenantId = existingMemberships[0].tenant_id;
+          localStorage.setItem("mb_active_tenant_id", existingTenantId);
+        } else {
+          // Criar novo tenant via RPC atômica
+          const { data: newTenantId, error: rpcError } = await (supabase.rpc as any)(
+            "create_tenant_for_current_user",
+            {
+              p_name: cleanName,
+              p_trade_name: cleanName,
+              p_slug: cleanSlug,
+              p_phone: phone.trim(),
+              p_email: email.trim() || null,
+              p_address_street: street.trim() || null,
+              p_address_number: number.trim() || null,
+              p_address_neighborhood: neighborhood.trim() || null,
+              p_address_city: city.trim() || null,
+              p_address_state: state || null,
+              p_address_zip_code: zipCode.trim() || null,
+              p_logo_url: null,
+            }
+          );
+
+          if (rpcError) throw rpcError;
+          if (newTenantId) {
+            localStorage.setItem("mb_active_tenant_id", newTenantId);
+          }
         }
       }
 
-      await refreshUserData();
-      setCreatedSlug(cleanSlug);
+      // Atualizar o contexto e garantir que o estado local reflita o novo tenant
+      const freshData = await refreshUserData(authenticatedUser.id);
+      if (freshData?.tenant?.id) {
+        localStorage.setItem("mb_active_tenant_id", freshData.tenant.id);
+      }
+
+      // Redirecionamento confiável para o painel
+      const fromParam = (location.state as any)?.from?.pathname || sessionStorage.getItem("mb_auth_from");
+      sessionStorage.removeItem("mb_auth_from");
+
+      if (fromParam && !fromParam.startsWith("/auth") && !fromParam.startsWith("/onboarding") && fromParam !== "/") {
+        navigate(fromParam, { replace: true });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
     } catch (err: any) {
       console.error("Erro ao salvar barbearia:", err);
       setError(err?.message || "Não foi possível cadastrar a barbearia. Tente novamente.");
@@ -486,7 +569,7 @@ export const TenantOnboardingPage: React.FC = () => {
             MB
           </div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent/10 border border-accent/30 text-accent text-xs font-semibold mb-2">
-            <Sparkles className="w-3.5 h-3.5" /> Configuração da Barbearia • 14 Dias Grátis
+            <Sparkles className="w-3.5 h-3.5" /> Configuração da Barbearia • 35 Dias Grátis
           </div>
           <h2 className="text-2xl font-black text-white">Dados da sua Barbearia</h2>
           <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
@@ -601,70 +684,134 @@ export const TenantOnboardingPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Seção 3: Endereço */}
-          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
-              <MapPin className="w-4 h-4 text-accent" />
-              <span>Localização do Estabelecimento</span>
+          {/* Seção 3: Endereço (CEP como primeira parte; libera rua, número, etc. ao localizar cidade e estado) */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+                <MapPin className="w-4 h-4 text-accent" />
+                <span>Localização do Estabelecimento</span>
+              </div>
+              {isAddressUnlocked ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold">
+                  <Unlock className="w-3 h-3" />
+                  <span>Campos Liberados</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[11px] font-semibold">
+                  <Lock className="w-3 h-3" />
+                  <span>Aguardando CEP</span>
+                </span>
+              )}
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Rua / Avenida</label>
+            {/* 1. CEP COMO PRIMEIRA PARTE DA SEÇÃO DE ENDEREÇO */}
+            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-200">
+                  CEP do Estabelecimento <span className="text-red-400">*</span>
+                </label>
+                {cepLoading && (
+                  <span className="text-[11px] text-accent flex items-center gap-1 font-semibold">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Buscando cidade e estado...
+                  </span>
+                )}
+              </div>
+
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                 <input
                   type="text"
-                  placeholder="Ex: Rua Augusta"
-                  value={street}
-                  onChange={(e) => setStreet(e.target.value)}
+                  required
+                  placeholder="00000-000"
+                  value={zipCode}
+                  onChange={handleZipCodeChange}
                   disabled={submitting}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent"
+                  maxLength={9}
+                  className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-sm font-mono tracking-wider text-white placeholder:text-slate-500 focus:outline-none transition shadow-inner ${
+                    isAddressUnlocked
+                      ? "bg-slate-950 border border-emerald-500/50 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20"
+                      : "bg-slate-950 border border-slate-700 focus:border-accent focus:ring-2 focus:ring-accent/30"
+                  }`}
                 />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Número</label>
-                <input
-                  type="text"
-                  placeholder="1420"
-                  value={number}
-                  onChange={(e) => setNumber(e.target.value)}
-                  disabled={submitting}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent"
-                />
-              </div>
+
+              {/* Status e feedback da validação do CEP */}
+              {cepStatus.message && (
+                <div
+                  className={`text-[11px] flex items-center gap-1.5 pt-0.5 ${
+                    cepStatus.status === "success"
+                      ? "text-emerald-400"
+                      : cepStatus.status === "error"
+                      ? "text-red-300"
+                      : "text-slate-400"
+                  }`}
+                >
+                  {cepStatus.status === "success" && <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />}
+                  {cepStatus.status === "error" && <AlertCircle className="w-3.5 h-3.5 shrink-0 text-red-400" />}
+                  {cepStatus.status === "loading" && <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-accent" />}
+                  <span>{cepStatus.message}</span>
+                </div>
+              )}
+
+              {!isAddressUnlocked && !cepStatus.message && (
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Digite o CEP com 8 dígitos para consultar a cidade e estado automaticamente e liberar o preenchimento da rua, número e bairro.
+                </p>
+              )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Bairro</label>
-                <input
-                  type="text"
-                  placeholder="Consolação"
-                  value={neighborhood}
-                  onChange={(e) => setNeighborhood(e.target.value)}
-                  disabled={submitting}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Cidade</label>
-                <input
-                  type="text"
-                  placeholder="São Paulo"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  disabled={submitting}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
+            {/* 2. DEMAIS CAMPOS DE ENDEREÇO (LIBERADOS SOMENTE APÓS O CEP SER CONSULTADO) */}
+            <div
+              className={`space-y-3 transition-all duration-200 ${
+                isAddressUnlocked
+                  ? "opacity-100"
+                  : "opacity-40 pointer-events-none select-none"
+              }`}
+            >
+              {!isAddressUnlocked && (
+                <div className="p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/20 text-amber-300/90 text-xs flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 shrink-0 text-amber-400" />
+                    <span>Campos bloqueados. Informe o CEP acima para preencher cidade e estado.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddressUnlocked(true)}
+                    className="text-[10px] text-accent underline shrink-0 hover:text-white pointer-events-auto"
+                  >
+                    Preencher sem CEP
+                  </button>
+                </div>
+              )}
+
+              {/* Cidade e UF */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">
+                    Cidade <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required={isAddressUnlocked}
+                    placeholder="Cidade"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    disabled={!isAddressUnlocked || submitting}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">UF</label>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">
+                    UF <span className="text-red-400">*</span>
+                  </label>
                   <select
                     value={state}
                     onChange={(e) => setState(e.target.value)}
-                    disabled={submitting}
-                    className="w-full px-2 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-accent"
+                    disabled={!isAddressUnlocked || submitting}
+                    className="w-full px-2 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
                   >
+                    <option value="">UF</option>
                     {BRAZILIAN_STATES.map((uf) => (
                       <option key={uf} value={uf}>
                         {uf}
@@ -672,24 +819,51 @@ export const TenantOnboardingPage: React.FC = () => {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-slate-400">CEP</label>
-                    {cepLoading && (
-                      <span className="text-[10px] text-accent flex items-center gap-1 font-medium">
-                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> Buscando...
-                      </span>
-                    )}
-                  </div>
+              </div>
+
+              {/* Rua e Número */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">
+                    Rua / Avenida
+                  </label>
                   <input
                     type="text"
-                    placeholder="00000-000"
-                    value={zipCode}
-                    onChange={handleZipCodeChange}
-                    disabled={submitting}
-                    className="w-full px-2 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent"
+                    placeholder="Ex: Rua Augusta"
+                    value={street}
+                    onChange={(e) => setStreet(e.target.value)}
+                    disabled={!isAddressUnlocked || submitting}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">
+                    Número
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="1420"
+                    value={number}
+                    onChange={(e) => setNumber(e.target.value)}
+                    disabled={!isAddressUnlocked || submitting}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
+              {/* Bairro */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">
+                  Bairro
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Consolação"
+                  value={neighborhood}
+                  onChange={(e) => setNeighborhood(e.target.value)}
+                  disabled={!isAddressUnlocked || submitting}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                />
               </div>
             </div>
           </div>
