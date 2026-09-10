@@ -1,4 +1,5 @@
 import { corsHeaders } from '../_shared/cors.ts';
+import { createClient } from 'npm:@supabase/supabase-js@2';
 import {
   renderAppointmentEmail,
   NotificationEvent,
@@ -10,8 +11,6 @@ interface SendEmailRequest {
   subject?: string;
   html?: string;
   text?: string;
-  from?: string;
-  reply_to?: string;
   event?: NotificationEvent;
   templateData?: EmailTemplateData;
 }
@@ -39,6 +38,17 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const token = req.headers.get('Authorization')?.replace('Bearer ', '');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+    if (!token || !supabaseUrl || !anonKey) {
+      return new Response(JSON.stringify({ error: 'Authentication required.' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const authClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
+    const { data: authData, error: authError } = await authClient.auth.getUser(token);
+    if (authError || !authData.user) {
+      return new Response(JSON.stringify({ error: 'Authentication required.' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
     // 1. Validate Resend API Key from Supabase Secret
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     if (!resendApiKey) {
@@ -69,7 +79,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const { to, from: customFrom, reply_to, event, templateData } = body;
+    const { to, event, templateData } = body;
     let { subject, html, text } = body;
 
     // Validate recipient
@@ -83,13 +93,13 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // If a notification event and template data were supplied, generate template
-    if (event && templateData) {
-      const rendered = renderAppointmentEmail(event, templateData);
-      subject = subject || rendered.subject;
-      html = html || rendered.html;
-      text = text || rendered.text;
+    if (!event || !templateData) {
+      return new Response(JSON.stringify({ error: 'Only structured notification events are accepted.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+    const rendered = renderAppointmentEmail(event, templateData);
+    subject = rendered.subject;
+    html = rendered.html;
+    text = rendered.text;
 
     // Validate subject and content
     if (!subject || typeof subject !== 'string' || subject.trim() === '') {
@@ -116,7 +126,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const recipients = Array.isArray(to) ? to : [to];
-    const fromAddress = customFrom || DEFAULT_FROM;
+    const fromAddress = DEFAULT_FROM;
 
     // 3. Dispatch to Resend API
     const resendPayload: Record<string, unknown> = {
@@ -128,10 +138,6 @@ Deno.serve(async (req: Request) => {
 
     if (text) {
       resendPayload.text = text;
-    }
-
-    if (reply_to) {
-      resendPayload.reply_to = reply_to;
     }
 
     const resendResponse = await fetch(RESEND_API_URL, {

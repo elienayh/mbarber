@@ -1,17 +1,55 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>MBarber — Agendamento e Gestão para Barbearias</title>
-    <meta name="description" content="O sistema moderno para agendamento online e gestão da sua barbearia. Seus clientes agendam sem instalar aplicativo e você tem controle total da sua agenda." />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MetricBarber - Gestão Inteligente para Barbearias</title>
+    <meta name="description" content="Plataforma SaaS Multi-tenant de gestão e agendamento para barbearias, com controle financeiro, comissões, múltiplos profissionais e chat conversacional de agendamento." />
+    <meta property="og:title" content="MetricBarber - Gestão Inteligente para Barbearias" />
+    <meta property="og:description" content="Plataforma SaaS Multi-tenant de gestão e agendamento para barbearias, com controle financeiro, comissões, múltiplos profissionais e chat conversacional de agendamento." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   </head>
-  <body class="bg-stone-950 text-stone-100 antialiased selection:bg-amber-500 selection:text-stone-950 font-sans">
+  <body>
     <div id="root"></div>
+
+    <!-- Facebook JavaScript SDK -->
+    <script>
+      window.fbAsyncInit = function() {
+        var fbAppId = '{your-app-id}';
+        var fbVersion = '{api-version}';
+
+        // Só inicializa quando o App ID real for configurado, evitando a exceção "invalid version specified"
+        if (fbAppId && fbAppId !== '{your-app-id}' && !fbAppId.includes('{')) {
+          try {
+            var validVersion = (fbVersion && fbVersion !== '{api-version}' && !fbVersion.includes('{')) ? fbVersion : 'v20.0';
+            FB.init({
+              appId      : fbAppId,
+              cookie     : true,
+              xfbml      : true,
+              version    : validVersion.startsWith('v') ? validVersion : 'v' + validVersion
+            });
+              
+            FB.AppEvents.logPageView();   
+          } catch (e) {
+            console.warn('Aviso ao inicializar Facebook SDK:', e);
+          }
+        }
+      };
+
+      (function(d, s, id){
+         var js, fjs = d.getElementsByTagName(s)[0];
+         if (d.getElementById(id)) {return;}
+         js = d.createElement(s); js.id = id;
+         js.src = "https://connect.facebook.net/en_US/sdk.js";
+         fjs.parentNode.insertBefore(js, fjs);
+       }(document, 'script', 'facebook-jssdk'));
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+

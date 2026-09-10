@@ -22,6 +22,7 @@ export const AdminLayout: React.FC = () => {
     { label: "Auditoria & Logs", href: "/admin/audit", icon: FileText },
     { label: "Suporte", href: "/admin/support", icon: HelpCircle },
   ];
+  const mobileNavItems = adminNav.slice(0, 5);
 
   return (
     <div className="flex h-screen bg-slate-900 text-slate-100 overflow-hidden">
@@ -81,10 +82,31 @@ export const AdminLayout: React.FC = () => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-900">
+        <main className="admin-main flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-6 bg-slate-900">
           <Outlet />
         </main>
       </div>
+
+      <nav className="fixed bottom-0 inset-x-0 z-40 md:hidden bg-slate-950/95 border-t border-slate-800 backdrop-blur-lg px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2">
+        <div className="grid grid-cols-5 gap-1">
+          {mobileNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location.pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                to={item.href}
+                className={`min-h-12 flex flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold transition ${
+                  isActive ? "bg-accent text-slate-950" : "text-slate-400 hover:bg-slate-900"
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span>{item.label.split(" ")[0]}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 };

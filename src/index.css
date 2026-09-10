@@ -1,19 +1,46 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+.custom-map-marker {
+  cursor: grab !important;
+  user-select: none;
+}
+.custom-map-marker:active {
+  cursor: grabbing !important;
+}
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-display: "Outfit", "Plus Jakarta Sans", sans-serif;
+  --color-brand-50: #D0D3D9;
+  --color-brand-100: #D0D3D9;
+  --color-brand-500: #1F3140;
+  --color-brand-600: #171F26;
+  --color-brand-gold: #A66953;
+  --color-brand-amber: #A66953;
+  --color-accent: #F28322;
+}
 
 @layer base {
   :root {
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --mb-navy-950: #020617;
-    --mb-navy-900: #0f172a;
-    --mb-navy-800: #1e293b;
-    --mb-navy-700: #334155;
-    --mb-navy-600: #475569;
-    --mb-text: #e2e8f0;
-    --mb-muted: #94a3b8;
-    --mb-amber: #f59e0b;
+    --background: 0 0% 5%;
+    --foreground: 0 0% 92%;
+    --surface-page-dark: #0D0D0D;
+    --surface-elevated-dark: #1A1A1A;
+    --surface-muted-dark: #2A2A2A;
+    --surface-elevated-light: #F4F4F4;
+    --surface-card-light: #FFFFFF;
+    --surface-accent-soft: rgba(242, 131, 34, 0.12);
+    --text-primary-on-dark: #F8FAFC;
+    --text-secondary-on-dark: #94A3B8;
+    --text-primary-on-light: #0F172A;
+    --text-secondary-on-light: #64748B;
+    --accent: #F28322;
+    --line-dark: rgba(242, 214, 189, 0.14);
+    --line-dark-strong: rgba(242, 214, 189, 0.24);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.28), 0 8px 20px rgba(0, 0, 0, 0.16);
+    --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.32), 0 18px 42px rgba(0, 0, 0, 0.24);
+    --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.36), 0 28px 70px rgba(0, 0, 0, 0.3);
   }
 
   html {
@@ -21,9 +48,12 @@
   }
 
   body {
-    @apply min-h-screen font-sans antialiased;
-    background: var(--mb-navy-950);
-    color: var(--mb-text);
+    min-height: 100vh;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background: var(--surface-page-dark);
+    color: var(--text-primary-on-dark);
     -webkit-tap-highlight-color: transparent;
   }
 }
@@ -39,51 +69,51 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--surface-muted-dark);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #71717a;
+  background: var(--accent);
 }
 
 .landing-page .bg-stone-950 {
-  background-color: var(--mb-navy-950);
+  background-color: var(--surface-page-dark);
 }
 
 .landing-page .bg-stone-900 {
-  background-color: var(--mb-navy-900);
+  background-color: var(--surface-elevated-dark);
 }
 
 .landing-page .bg-stone-800 {
-  background-color: var(--mb-navy-800);
+  background-color: var(--surface-muted-dark);
 }
 
 .landing-page .border-stone-900 {
-  border-color: #0b1d3a;
+  border-color: var(--surface-page-dark);
 }
 
 .landing-page .border-stone-800 {
-  border-color: #263b59;
+  border-color: var(--surface-muted-dark);
 }
 
 .landing-page .border-stone-700 {
-  border-color: #3a506d;
+  border-color: var(--surface-muted-dark);
 }
 
 .landing-page .text-stone-100,
 .landing-page .text-stone-200 {
-  color: #e2e8f0;
+  color: var(--text-primary-on-dark);
 }
 
 .landing-page .text-stone-300,
 .landing-page .text-stone-400 {
-  color: #a9bad1;
+  color: var(--text-primary-on-dark);
 }
 
 .landing-page .text-stone-500,
 .landing-page .text-stone-600 {
-  color: #7890ad;
+  color: var(--text-secondary-on-dark);
 }
 
 /* Keep translucent landing surfaces and gradients on the same navy scale. */
@@ -91,7 +121,7 @@
 .landing-page [class~="bg-stone-950/80"],
 .landing-page [class~="bg-stone-950/90"],
 .landing-page [class~="bg-stone-950/95"] {
-  background-color: rgb(2 6 23 / 0.9);
+  background-color: color-mix(in srgb, var(--surface-page-dark) 90%, transparent);
 }
 
 .landing-page [class~="bg-stone-900/20"],
@@ -100,39 +130,478 @@
 .landing-page [class~="bg-stone-900/80"],
 .landing-page [class~="bg-stone-900/90"],
 .landing-page [class~="bg-stone-900/95"] {
-  background-color: rgb(15 23 42 / 0.9);
+  background-color: color-mix(in srgb, var(--surface-elevated-dark) 90%, transparent);
 }
 
 .landing-page [class~="bg-stone-800/90"] {
-  background-color: rgb(30 41 59 / 0.9);
+  background-color: color-mix(in srgb, var(--surface-elevated-dark) 90%, transparent);
 }
 
 .landing-page [class~="border-stone-800/60"],
 .landing-page [class~="border-stone-800/80"],
 .landing-page [class~="border-stone-800/90"] {
-  border-color: rgb(38 59 89 / 0.9);
+  border-color: color-mix(in srgb, var(--surface-muted-dark) 90%, transparent);
 }
 
 .landing-page [class~="from-stone-900/90"] {
-  --tw-gradient-from: rgb(15 23 42 / 0.9) var(--tw-gradient-from-position);
-  --tw-gradient-to: rgb(15 23 42 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-from: color-mix(in srgb, var(--surface-elevated-dark) 90%, transparent) var(--tw-gradient-from-position);
+  --tw-gradient-to: color-mix(in srgb, var(--surface-elevated-dark) 0%, transparent) var(--tw-gradient-to-position);
 }
 
 .landing-page [class~="via-stone-900/90"] {
-  --tw-gradient-to: rgb(15 23 42 / 0) var(--tw-gradient-to-position);
-  --tw-gradient-stops: var(--tw-gradient-from), rgb(15 23 42 / 0.9) var(--tw-gradient-via-position), var(--tw-gradient-to);
+  --tw-gradient-to: color-mix(in srgb, var(--surface-elevated-dark) 0%, transparent) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), color-mix(in srgb, var(--surface-elevated-dark) 90%, transparent) var(--tw-gradient-via-position), var(--tw-gradient-to);
 }
 
 .landing-page [class~="to-stone-950"] {
-  --tw-gradient-to: var(--mb-navy-950) var(--tw-gradient-to-position);
+  --tw-gradient-to: var(--surface-page-dark) var(--tw-gradient-to-position);
 }
 
 .auth-page {
-  background: var(--mb-navy-950);
-  color: var(--mb-text);
+  background: var(--surface-page-dark);
+  color: var(--text-primary-on-dark);
 }
 
 .auth-page .auth-card {
-  background: var(--mb-navy-900);
-  border-color: #263b59;
+  background: var(--surface-elevated-dark);
+  border-color: var(--surface-muted-dark);
+}
+
+/* Semantic context classes used explicitly by components. */
+.surface-page-dark { background-color: var(--surface-page-dark); }
+.surface-elevated-dark { background-color: var(--surface-elevated-dark); }
+.surface-muted-dark { background-color: var(--surface-muted-dark); }
+.surface-elevated-light { background-color: var(--surface-elevated-light); }
+.surface-card-light { background-color: var(--surface-card-light); }
+.surface-accent-soft { background-color: var(--surface-accent-soft); }
+.surface-status-soft { background-color: #ECECEC; }
+.text-primary-on-dark { color: var(--text-primary-on-dark); }
+.text-secondary-on-dark { color: var(--text-secondary-on-dark); }
+.text-primary-on-light { color: var(--text-primary-on-light); }
+.text-secondary-on-light { color: var(--text-secondary-on-light); }
+.text-accent { color: var(--accent); }
+.border-muted-dark { border-color: var(--surface-muted-dark); }
+.border-muted-light { border-color: #D9D9D9; }
+.border-accent { border-color: var(--accent); }
+.bg-accent { background-color: var(--accent); }
+.hover-bg-accent:hover { background-color: var(--accent); }
+.hover-surface-elevated-light:hover { background-color: var(--surface-elevated-light); }
+.hover-surface-card-light:hover { background-color: var(--surface-card-light); }
+.hover-surface-accent-soft:hover { background-color: var(--surface-accent-soft); }
+.hover-text-accent:hover { color: var(--accent); }
+.hover-border-accent:hover { border-color: var(--accent); }
+.focus-border-accent:focus { border-color: var(--accent); }
+.focus-within-border-accent:focus-within { border-color: var(--accent); }
+.shadow-accent { --tw-shadow-color: rgba(242, 131, 34, 0.2); }
+.accent-control { accent-color: var(--accent); }
+.headline-accent { background-image: linear-gradient(90deg, #FFB15C, var(--accent)); }
+
+/* Landing presentation layer: shared markup stays semantic while surfaces gain
+   depth, contrast and a restrained glass treatment. */
+.landing-page {
+  --landing-bg: #0D0D0D;
+  --landing-surface: #1A1A1A;
+  --landing-surface-raised: #242424;
+  --landing-text: #F2D6BD;
+  --landing-muted: rgba(242, 242, 242, 0.72);
+  --landing-border: rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(circle at 50% -10%, rgba(242, 131, 34, 0.1), transparent 34rem),
+    linear-gradient(145deg, #0D0D0D 0%, #111111 48%, #0D0D0D 100%) !important;
+  color: var(--landing-text) !important;
+}
+
+.landing-hero {
+  isolation: isolate;
+  min-height: 46rem;
+  background: #0D0D0D !important;
+}
+
+.landing-hero__image,
+.landing-hero__overlay,
+.landing-hero__vignette {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.landing-hero__image {
+  z-index: -3;
+  object-fit: cover;
+  object-position: 64% center;
+  filter: saturate(0.88) contrast(1.06);
+}
+
+.landing-hero__overlay {
+  z-index: -2;
+  background:
+    linear-gradient(90deg, rgba(13, 13, 13, 0.95) 0%, rgba(13, 13, 13, 0.84) 42%, rgba(13, 13, 13, 0.5) 100%),
+    linear-gradient(180deg, rgba(13, 13, 13, 0.55) 0%, rgba(13, 13, 13, 0.38) 42%, rgba(13, 13, 13, 0.94) 100%),
+    linear-gradient(135deg, rgba(242, 131, 34, 0.1), transparent 58%);
+}
+
+.landing-hero__vignette {
+  z-index: -1;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(8, 13, 17, 0.28) 100%);
+}
+
+.landing-hero__content {
+  position: relative;
+}
+
+.landing-hero__content > div:first-child {
+  background-color: rgba(13, 13, 13, 0.72) !important;
+  border-color: rgba(242, 214, 189, 0.2) !important;
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.landing-hero__content h1 span {
+  text-shadow: 1px 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.landing-hero__content p {
+  color: #F2D6BD !important;
+  text-shadow: 0 2px 12px rgba(8, 13, 17, 0.75);
+}
+
+@media (max-width: 767px) {
+  .landing-hero {
+    min-height: 48rem;
+  }
+
+  .landing-hero__image {
+    object-position: 68% center;
+  }
+
+  .landing-hero__overlay {
+    background:
+      linear-gradient(180deg, rgba(13, 13, 13, 0.58) 0%, rgba(13, 13, 13, 0.78) 35%, rgba(13, 13, 13, 0.96) 78%, rgba(13, 13, 13, 0.99) 100%),
+      linear-gradient(90deg, rgba(13, 13, 13, 0.72) 0%, rgba(13, 13, 13, 0.38) 100%),
+      linear-gradient(135deg, rgba(242, 131, 34, 0.1), transparent 58%);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  .landing-hero__image {
+    object-position: 67% center;
+  }
+}
+
+@media (min-width: 1280px) {
+  .landing-hero__image {
+    object-position: 64% center;
+  }
+}
+
+.landing-page > header {
+  background: rgba(13, 13, 13, 0.84) !important;
+  border-color: var(--landing-border) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+}
+
+.landing-page > section,
+.landing-page > footer {
+  border-color: var(--landing-border) !important;
+}
+
+.landing-page > section:nth-of-type(odd) {
+  background-color: rgba(13, 13, 13, 0.42) !important;
+}
+
+.landing-page > section:nth-of-type(even) {
+  background-color: rgba(26, 26, 26, 0.42) !important;
+}
+
+.landing-page .bg-stone-950,
+.landing-page .bg-slate-950 {
+  background-color: rgba(13, 13, 13, 0.82) !important;
+}
+
+.landing-page .bg-stone-900,
+.landing-page .bg-stone-900\/40,
+.landing-page .bg-stone-900\/60,
+.landing-page .bg-stone-900\/80,
+.landing-page .bg-stone-900\/90,
+.landing-page .bg-stone-900\/95,
+.landing-page .bg-stone-800,
+.landing-page [class*="bg-stone-900/"] {
+  background-color: rgba(26, 26, 26, 0.92) !important;
+}
+
+.landing-page > section.landing-proof {
+  background: #F4F4F4 !important;
+  color: #171717 !important;
+  border-color: #E2E2E2 !important;
+}
+
+.landing-page .landing-proof [class*="text-white"],
+.landing-page .landing-proof [class*="text-stone-"],
+.landing-page .landing-proof h2,
+.landing-page .landing-proof h3 {
+  color: #171717 !important;
+}
+
+.landing-page .landing-proof p {
+  color: #5A5A5A !important;
+}
+
+.landing-page .landing-proof .text-secondary-on-dark {
+  color: #171717 !important;
+}
+
+.landing-page .landing-proof [class*="bg-stone-"] {
+  background-color: #FFFFFF !important;
+  border-color: #E2E2E2 !important;
+}
+
+.landing-page [class*="bg-stone-950/"],
+.landing-page [class*="bg-stone-900/"],
+.landing-page [class*="bg-stone-800/"] {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.landing-page [class*="border-stone-"],
+.landing-page [class*="border-slate-"] {
+  border-color: var(--landing-border) !important;
+}
+
+.landing-page [class*="shadow-2xl"],
+.landing-page [class*="shadow-xl"] {
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.landing-page [class*="shadow-md"],
+.landing-page [class*="shadow-inner"] {
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.landing-page p,
+.landing-page [class*="text-stone-400"],
+.landing-page [class*="text-stone-500"],
+.landing-page [class*="text-slate-400"] {
+  color: var(--landing-muted) !important;
+}
+
+.landing-page [class*="text-white"],
+.landing-page [class*="text-stone-200"],
+.landing-page [class*="text-stone-300"] {
+  color: var(--landing-text) !important;
+}
+
+.landing-page a,
+.landing-page button {
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease,
+    box-shadow 180ms ease, transform 180ms ease;
+}
+
+.landing-page [class*="hover:border-"]:hover {
+  border-color: rgba(242, 131, 34, 0.58) !important;
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.landing-page a:focus-visible,
+.landing-page button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .landing-page [class*="backdrop-blur"] {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  .landing-page [class*="shadow-2xl"],
+  .landing-page [class*="shadow-xl"] {
+    box-shadow: var(--shadow-md) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-page *,
+  .landing-page *::before,
+  .landing-page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Touch-first defaults for authenticated workflows. */
+button,
+a,
+select,
+input,
+textarea {
+  min-height: 44px;
+}
+
+/* ==========================================================================
+   Form Controls Contrast & Theme Adaptation Engine
+   - Dark surfaces: Crisp pure white / slate-50 text, high-contrast slate-400 placeholder
+   - Light surfaces: Crisp slate-900 text, high-contrast slate-400 placeholder
+   - Chrome/Safari Autofill: Preserves high contrast without text color inversion
+   ========================================================================== */
+
+/* 1. Default Light Controls (Tenant views, modals, white cards) */
+input,
+select,
+textarea {
+  color: #0f172a;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+/* 2. Explicit Class Overrides (Tailwind utility priority) */
+input.text-white,
+textarea.text-white,
+select.text-white,
+input[class*="text-white"],
+textarea[class*="text-white"],
+select[class*="text-white"],
+input[class*="text-slate-100"],
+textarea[class*="text-slate-100"],
+input[class*="text-slate-200"],
+textarea[class*="text-slate-200"],
+input[class*="text-slate-50"],
+textarea[class*="text-slate-50"] {
+  color: #ffffff !important;
+  caret-color: #f28322 !important;
+}
+
+input.text-slate-900,
+textarea.text-slate-900,
+select.text-slate-900,
+input[class*="text-slate-900"],
+textarea[class*="text-slate-900"],
+select[class*="text-slate-900"],
+input[class*="text-slate-800"],
+textarea[class*="text-slate-800"] {
+  color: #0f172a !important;
+  caret-color: #f28322 !important;
+}
+
+/* 3. Dark Surface Controls (Login, Register, Public Booking, Admin, Dark themes) */
+.auth-page input,
+.auth-page select,
+.auth-page textarea,
+.auth-card input,
+.auth-card select,
+.auth-card textarea,
+.admin-main input,
+.admin-main select,
+.admin-main textarea,
+.landing-page input,
+.landing-page select,
+.landing-page textarea,
+.dark input,
+.dark select,
+.dark textarea,
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea,
+aside.bg-slate-950 input,
+input[class*="bg-slate-950"],
+textarea[class*="bg-slate-950"],
+select[class*="bg-slate-950"],
+input[class*="bg-slate-900"],
+textarea[class*="bg-slate-900"],
+select[class*="bg-slate-900"],
+input[class*="bg-slate-800"],
+textarea[class*="bg-slate-800"],
+select[class*="bg-slate-800"],
+input[class*="bg-stone-9"],
+textarea[class*="bg-stone-9"],
+input[class*="bg-black"],
+textarea[class*="bg-black"] {
+  color: #ffffff !important;
+  caret-color: #f28322 !important;
+}
+
+.auth-page input::placeholder,
+.auth-page textarea::placeholder,
+.auth-card input::placeholder,
+.auth-card textarea::placeholder,
+.admin-main input::placeholder,
+.admin-main textarea::placeholder,
+.landing-page input::placeholder,
+.landing-page textarea::placeholder,
+.dark input::placeholder,
+.dark textarea::placeholder,
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder,
+input[class*="bg-slate-950"]::placeholder,
+textarea[class*="bg-slate-950"]::placeholder,
+input[class*="bg-slate-900"]::placeholder,
+textarea[class*="bg-slate-900"]::placeholder,
+input[class*="bg-slate-800"]::placeholder,
+textarea[class*="bg-slate-800"]::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+}
+
+/* 4. Chrome / Edge / Safari Autofill Adaptation */
+.auth-page input:-webkit-autofill,
+.auth-page input:-webkit-autofill:hover,
+.auth-page input:-webkit-autofill:focus,
+.auth-card input:-webkit-autofill,
+.auth-card input:-webkit-autofill:hover,
+.auth-card input:-webkit-autofill:focus,
+.admin-main input:-webkit-autofill,
+input[class*="bg-slate-9"]:-webkit-autofill,
+input[class*="bg-slate-8"]:-webkit-autofill,
+input[class*="bg-black"]:-webkit-autofill,
+.dark input:-webkit-autofill {
+  -webkit-text-fill-color: #ffffff !important;
+  -webkit-box-shadow: 0 0 0px 1000px #020617 inset !important;
+  box-shadow: 0 0 0px 1000px #020617 inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+  caret-color: #f28322 !important;
+  color: #ffffff !important;
+}
+
+input[class*="bg-white"]:-webkit-autofill,
+input[class*="bg-slate-50"]:-webkit-autofill,
+.surface-card-light input:-webkit-autofill {
+  -webkit-text-fill-color: #0f172a !important;
+  -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;
+  box-shadow: 0 0 0px 1000px #ffffff inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+  caret-color: #f28322 !important;
+  color: #0f172a !important;
+}
+
+/* 5. Select dropdown options inside dark mode */
+.dark select option,
+[data-theme="dark"] select option,
+.auth-page select option,
+select[class*="bg-slate-900"] option,
+select[class*="bg-slate-950"] option,
+select[class*="bg-slate-800"] option {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+}
+
+/* 6. Select dropdown options inside light mode */
+select[class*="bg-white"] option,
+.surface-card-light select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+@media (max-width: 767px) {
+  .tenant-main,
+  .admin-main {
+    padding-bottom: 5.5rem;
+  }
 }

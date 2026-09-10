@@ -7,6 +7,8 @@ import { useAuth } from "@/contexts/AuthContext";
 export const ReportsPage: React.FC = () => {
   const { tenant } = useAuth();
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!tenant?.id) return;
@@ -14,12 +16,15 @@ export const ReportsPage: React.FC = () => {
     const loadReports = async () => {
       const since = new Date();
       since.setDate(since.getDate() - 30);
-      const { data } = await (supabase.from("appointments") as any)
+      setLoading(true);
+      const { data, error: queryError } = await (supabase.from("appointments") as any)
         .select("price_cents, commission_cents, service_id, professional_id, services(name), professionals(name, nickname)")
         .eq("tenant_id", tenant.id)
         .gte("start_time", since.toISOString())
         .neq("status", "canceled");
       setAppointments(data || []);
+      if (queryError) setError(queryError.message);
+      setLoading(false);
     };
 
     loadReports();
@@ -61,30 +66,33 @@ export const ReportsPage: React.FC = () => {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="surface-card-light p-6 rounded-2xl border border-slate-200 shadow-sm">
         <h2 className="text-xl sm:text-2xl font-black text-slate-900">Relatórios & Inteligência</h2>
         <p className="text-sm text-slate-500 mt-0.5">
           Desempenho por barbeiro, serviços mais lucrativos e retenção de clientes
         </p>
       </div>
+      {loading && <div className="surface-card-light rounded-xl px-4 py-3 text-sm text-slate-500">Carregando relatórios...</div>}
+      {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Top Services */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div className="surface-card-light p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <h3 className="font-bold text-slate-900 text-base">Serviços Mais Vendidos</h3>
             <span className="text-xs text-slate-400">Últimos 30 dias</span>
           </div>
 
           <div className="space-y-3">
+            {!loading && reportData.topServices.length === 0 && <p className="text-sm text-slate-500">Nenhum atendimento encontrado no período.</p>}
             {reportData.topServices.map((s) => (
               <div key={s.name} className="space-y-1">
                 <div className="flex justify-between text-xs font-semibold">
                   <span className="text-slate-800">{s.name} ({s.count}x)</span>
                   <span className="text-slate-900 font-bold">{formatCurrency(s.revenue)}</span>
                 </div>
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div className="bg-amber-500 h-full rounded-full" style={{ width: `${s.share}%` }} />
+                <div className="w-full surface-elevated-light h-2 rounded-full overflow-hidden">
+                  <div className="bg-accent h-full rounded-full" style={{ width: `${s.share}%` }} />
                 </div>
               </div>
             ))}
@@ -92,13 +100,14 @@ export const ReportsPage: React.FC = () => {
         </div>
 
         {/* Barbers Productivity */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div className="surface-card-light p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <h3 className="font-bold text-slate-900 text-base">Produtividade da Equipe</h3>
             <span className="text-xs text-slate-400">Atendimentos no Mês</span>
           </div>
 
           <div className="space-y-4">
+            {!loading && reportData.professionals.length === 0 && <p className="text-sm text-slate-500">Nenhum profissional com atendimentos no período.</p>}
             {reportData.professionals.map((b) => (
               <div key={b.name} className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between text-xs">
                 <div>

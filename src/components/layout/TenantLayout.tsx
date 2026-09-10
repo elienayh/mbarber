@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { Link, useLocation, Outlet } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { NotificationBellDropdown } from "@/components/notifications/NotificationBellDropdown";
+import { NotificationToast } from "@/components/notifications/NotificationToast";
 import {
   Calendar,
   Users,
@@ -14,14 +16,13 @@ import {
   ExternalLink,
   Menu,
   X,
-  Bell,
   Sparkles,
 } from "lucide-react";
 
 export const TenantLayout: React.FC = () => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { tenant, tenantRole, profile } = useAuth();
+  const { tenant, tenantRole, profile, signOut, memberships, switchTenant } = useAuth();
 
   const trialDaysLeft = useMemo(() => {
     if (!tenant?.trial_ends_at) return 0;
@@ -42,35 +43,83 @@ export const TenantLayout: React.FC = () => {
     { label: "Relatórios", href: "/relatorios", icon: BarChart3 },
     { label: "Configurações", href: "/configuracoes", icon: Settings },
   ];
+  const visibleNavItems = tenantRole === "professional"
+    ? navItems.filter((item) => ["/dashboard", "/agenda", "/clientes"].includes(item.href))
+    : tenantRole === "receptionist"
+      ? navItems.filter((item) => ["/dashboard", "/agenda", "/clientes", "/servicos", "/estoque"].includes(item.href))
+      : navItems;
+  const mobileNavItems = visibleNavItems.slice(0, 5);
 
   const displayUserName = profile?.full_name || "Usuário";
-  const displayRole = tenantRole ? tenantRole.charAt(0).toUpperCase() + tenantRole.slice(1) : "Membro";
+  const roleTranslations: Record<string, string> = {
+    owner: "Proprietário",
+    admin: "Administrador",
+    professional: "Barbeiro",
+    receptionist: "Recepcionista",
+    super_admin: "Super Admin",
+  };
+  const displayRole = profile?.is_platform_admin
+    ? "Super Admin"
+    : tenantRole
+      ? (roleTranslations[tenantRole] || tenantRole.charAt(0).toUpperCase() + tenantRole.slice(1))
+      : "Proprietário";
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       <aside className="hidden md:flex flex-col w-64 bg-slate-900 text-white border-r border-slate-800">
         <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <Link to="/dashboard" className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-lg bg-amber-500 flex items-center justify-center font-bold text-slate-950 text-xl shadow-lg shadow-amber-500/20">
-              MB
-            </div>
-            <div>
-              <div className="font-bold text-base leading-tight tracking-tight text-white">MetricBarber</div>
-              <div className="text-xs text-slate-400 truncate max-w-[140px]">{tenant?.trade_name || "Barbearia"}</div>
+          <Link to="/dashboard" className="flex items-center gap-2.5">
+            {tenant?.logo_url ? (
+              <img
+                src={tenant.logo_url}
+                alt={tenant.trade_name || "Barbearia"}
+                className="w-9 h-9 rounded-lg object-cover border border-accent/40 shadow-md shrink-0"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center font-bold text-slate-950 text-xl shadow-lg shadow-accent shrink-0">
+                MB
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="font-bold text-base leading-tight tracking-tight text-white truncate">
+                {tenant?.trade_name || tenant?.name || "MetricBarber"}
+              </div>
+              <div className="text-xs text-slate-400 truncate max-w-[140px]">
+                {tenant?.trade_name ? "Barbearia Ativa" : "Painel da Barbearia"}
+              </div>
             </div>
           </Link>
         </div>
 
+        {memberships.length > 1 && (
+          <div className="px-3 pt-3">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 px-1">
+              Trocar Unidade / Barbearia
+            </label>
+            <select
+              value={tenant?.id || ""}
+              onChange={(e) => switchTenant(e.target.value)}
+              className="w-full px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-xs font-semibold text-white focus:outline-none focus:border-accent"
+            >
+              {memberships.map((m) => (
+                <option key={m.tenant_id} value={m.tenant_id}>
+                  {m.tenant?.trade_name || m.tenant?.name || "Barbearia"} ({m.role})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {tenant?.status === "trial" && (
-          <div className="mx-3 my-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs">
-            <div className="flex items-center gap-1.5 font-semibold text-amber-400">
+          <div className="mx-3 my-3 p-3 rounded-lg surface-accent-soft border border-accent text-xs">
+            <div className="flex items-center gap-1.5 font-semibold text-accent">
               <Sparkles className="w-4 h-4" />
               Período de Testes
             </div>
             <p className="text-slate-300 mt-1">Restam {trialDaysLeft} dias de Trial gratuito.</p>
             <Link
               to="/configuracoes/assinatura"
-              className="mt-2 block w-full text-center py-1 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition"
+              className="mt-2 block w-full text-center py-1 rounded bg-accent hover-bg-accent text-slate-950 font-bold transition"
             >
               Assinar Plano
             </Link>
@@ -78,7 +127,7 @@ export const TenantLayout: React.FC = () => {
         )}
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.href;
             return (
@@ -87,7 +136,7 @@ export const TenantLayout: React.FC = () => {
                 to={item.href}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
                   isActive
-                    ? "bg-amber-500 text-slate-950 font-bold shadow"
+                    ? "bg-accent text-slate-950 font-bold shadow"
                     : "text-slate-300 hover:bg-slate-800 hover:text-white"
                 }`}
               >
@@ -106,18 +155,21 @@ export const TenantLayout: React.FC = () => {
               className="flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-200 hover:bg-slate-700 transition"
             >
               <span>Ver Chat de Agendamento</span>
-              <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+              <ExternalLink className="w-3.5 h-3.5 text-accent" />
             </Link>
           )}
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 z-10">
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {/* Floating In-App Realtime Notification Toast */}
+        <NotificationToast />
+
+        <header className="h-16 surface-card-light border-b border-slate-200 flex items-center justify-between px-4 md:px-6 z-10">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100"
+              className="md:hidden p-2 rounded-lg text-slate-600 hover-surface-elevated-light"
             >
               {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -126,27 +178,26 @@ export const TenantLayout: React.FC = () => {
             </h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Sino de Notificações Push & Alertas em Tempo Real */}
+            <NotificationBellDropdown />
+
             {tenant?.slug && (
               <Link
                 to={`/${tenant.slug}`}
                 target="_blank"
-                className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition"
+                className="hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 surface-accent-soft text-primary-on-light border border-accent rounded-lg hover-surface-accent-soft transition"
               >
                 <span>Link do Chat</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </Link>
             )}
 
-            <button className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-100">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500"></span>
-            </button>
-
             <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-              <div className="w-8 h-8 rounded-full bg-slate-800 text-amber-400 font-bold text-xs flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full bg-slate-800 text-accent font-bold text-xs flex items-center justify-center">
                 {displayUserName.slice(0, 2).toUpperCase() || "MB"}
               </div>
+              <button type="button" onClick={() => void signOut()} className="min-h-11 rounded-lg px-3 text-xs font-semibold text-slate-600 hover-surface-elevated-light">Sair</button>
               <div className="hidden lg:block text-left text-xs">
                 <div className="font-semibold text-slate-800">{displayUserName}</div>
                 <div className="text-slate-400">{displayRole}</div>
@@ -159,13 +210,28 @@ export const TenantLayout: React.FC = () => {
           <div className="fixed inset-0 z-50 md:hidden bg-slate-950/60 backdrop-blur-sm flex">
             <div className="w-64 bg-slate-900 text-white h-full flex flex-col p-4 shadow-xl">
               <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                <div className="font-bold text-lg text-amber-400">MetricBarber</div>
+                <div className="flex items-center gap-2 min-w-0">
+                  {tenant?.logo_url ? (
+                    <img
+                      src={tenant.logo_url}
+                      alt={tenant.trade_name || "Barbearia"}
+                      className="w-8 h-8 rounded-lg object-cover border border-accent/40 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-lg bg-accent text-slate-950 font-bold flex items-center justify-center text-sm shrink-0">
+                      MB
+                    </div>
+                  )}
+                  <div className="font-bold text-sm text-white truncate">
+                    {tenant?.trade_name || tenant?.name || "MetricBarber"}
+                  </div>
+                </div>
                 <button onClick={() => setIsMobileMenuOpen(false)} className="p-1 rounded text-slate-400">
                   <X className="w-6 h-6" />
                 </button>
               </div>
               <nav className="flex-1 py-4 space-y-1">
-                {navItems.map((item) => (
+                {visibleNavItems.map((item) => (
                   <Link
                     key={item.href}
                     to={item.href}
@@ -182,10 +248,31 @@ export const TenantLayout: React.FC = () => {
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50">
+        <main className="tenant-main flex-1 overflow-y-auto p-4 pb-24 md:p-6 md:pb-6 bg-slate-50">
           <Outlet />
         </main>
       </div>
+
+      <nav className="fixed bottom-0 inset-x-0 z-40 md:hidden bg-slate-900/95 border-t border-slate-800 backdrop-blur-lg px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-2xl">
+        <div className="grid grid-cols-5 gap-1">
+          {mobileNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location.pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                to={item.href}
+                className={`min-h-12 flex flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold transition ${
+                  isActive ? "bg-accent text-slate-950" : "text-slate-400 hover:bg-slate-800"
+                }`}
+              >
+                <Icon className="w-5 h-5" />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 };

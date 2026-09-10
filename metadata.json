@@ -1,0 +1,6 @@
+{
+  "name": "MetricBarber",
+  "description": "Plataforma SaaS Multi-tenant de gestão e agendamento para barbearias, com controle financeiro, comissões, múltiplos profissionais e chat conversacional de agendamento.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

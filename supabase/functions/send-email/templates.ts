@@ -19,20 +19,23 @@ export interface EmailTemplateData {
   cancellationReason?: string;
 }
 
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[character] || character));
+
 export function renderAppointmentEmail(
   event: NotificationEvent,
   data: EmailTemplateData
 ): { subject: string; html: string; text: string } {
-  const tenant = data.tenantName || 'MBarber';
-  const client = data.clientName || 'Cliente';
-  const service = data.serviceName || 'Serviço';
-  const barber = data.barberName || 'Barbeiro';
-  const date = data.date || 'Data a confirmar';
-  const time = data.time || 'Horário a confirmar';
-  const code = data.bookingCode || 'N/A';
-  const address = data.address || '';
-  const reason = data.cancellationReason || '';
-  const actionUrl = data.actionUrl || 'https://mbarber.com.br';
+  const tenant = escapeHtml(data.tenantName || 'MBarber');
+  const client = escapeHtml(data.clientName || 'Cliente');
+  const service = escapeHtml(data.serviceName || 'Serviço');
+  const barber = escapeHtml(data.barberName || 'Barbeiro');
+  const date = escapeHtml(data.date || 'Data a confirmar');
+  const time = escapeHtml(data.time || 'Horário a confirmar');
+  const code = escapeHtml(data.bookingCode || 'N/A');
+  const address = escapeHtml(data.address || '');
+  const reason = escapeHtml(data.cancellationReason || '');
 
   let eventTitle = 'Atualização do Agendamento';
   let badgeColor = '#d97706'; // Amber

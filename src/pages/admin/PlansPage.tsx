@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Layers, Plus, Check, Edit2 } from "lucide-react";
+import { Layers, Plus, Check } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 
@@ -42,14 +42,14 @@ export const PlansPage: React.FC = () => {
           <div
             key={p.id}
             className={`bg-slate-950 rounded-2xl p-6 border flex flex-col justify-between ${
-              p.is_popular ? "border-amber-500 shadow-lg shadow-amber-500/10" : "border-slate-800"
+              p.is_popular ? "border-accent shadow-lg shadow-accent" : "border-slate-800"
             }`}
           >
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-bold text-lg text-white">{p.name}</h3>
                 {p.is_popular && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950 uppercase">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-accent text-slate-950 uppercase">
                     Mais Assinado
                   </span>
                 )}
@@ -74,11 +74,6 @@ export const PlansPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-slate-800 flex justify-end">
-              <button className="text-xs font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1">
-                <Edit2 className="w-3.5 h-3.5" /> Editar no Stripe
-              </button>
-            </div>
           </div>
         ))}
       </div>

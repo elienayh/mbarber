@@ -23,6 +23,8 @@ export const AdminDashboardPage: React.FC = () => {
     churnRate: "0%",
     newThisMonth: 0,
   });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadPlatformStats = async () => {
@@ -32,7 +34,12 @@ export const AdminDashboardPage: React.FC = () => {
       const { data: subscriptionsData, error: subscriptionsError } = await (supabase.from("subscriptions") as any)
         .select("tenant_id, status, plan_id, plans(price_cents)");
 
-      if (!tenantsError && tenantsData) {
+      if (tenantsError || subscriptionsError) {
+        setError(tenantsError?.message || subscriptionsError?.message || "Não foi possível carregar as métricas.");
+        setLoading(false);
+        return;
+      }
+      if (tenantsData) {
         const totalTenants = tenantsData.length;
         const activeTenants = tenantsData.filter((tenant: any) => tenant.status === "active").length;
         const trialTenants = tenantsData.filter((tenant: any) => tenant.status === "trial").length;
@@ -58,6 +65,7 @@ export const AdminDashboardPage: React.FC = () => {
           newThisMonth,
         });
       }
+      setLoading(false);
     };
 
     loadPlatformStats();
@@ -80,6 +88,8 @@ export const AdminDashboardPage: React.FC = () => {
           </p>
         </div>
       </div>
+      {loading && <div className="bg-slate-950 rounded-xl border border-slate-800 px-4 py-3 text-sm text-slate-400">Carregando métricas...</div>}
+      {error && <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800">
@@ -105,7 +115,7 @@ export const AdminDashboardPage: React.FC = () => {
 
         <div className="bg-slate-950 p-5 rounded-2xl border border-slate-800">
           <div className="text-xs font-bold text-slate-400 uppercase">Taxa de Churn (Cancelamento)</div>
-          <div className="text-2xl font-black text-amber-400 mt-1">{stats.churnRate}</div>
+          <div className="text-2xl font-black text-accent mt-1">{stats.churnRate}</div>
           <div className="text-xs text-slate-400 mt-1">{stats.suspendedTenants} suspensas</div>
         </div>
       </div>
@@ -113,7 +123,7 @@ export const AdminDashboardPage: React.FC = () => {
       <div className="bg-slate-950 rounded-2xl border border-slate-800 p-6 space-y-4">
         <h3 className="font-bold text-white text-base">Alertas & Ações Críticas Recentes</h3>
         <div className="space-y-2 text-xs">
-          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-between">
+          <div className="p-3 rounded-xl surface-accent-soft border border-accent text-accent flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4" />
               <span>{alertContent}</span>

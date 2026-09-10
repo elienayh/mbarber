@@ -7,6 +7,9 @@ import { Home } from "./pages/Home";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { RegisterPage } from "./pages/auth/RegisterPage";
 import { ResetPasswordPage } from "./pages/auth/ResetPasswordPage";
+import { AuthCallbackPage } from "./pages/auth/AuthCallbackPage";
+import { ProfileOnboardingPage } from "./pages/onboarding/ProfileOnboardingPage";
+import { TenantOnboardingPage } from "./pages/onboarding/TenantOnboardingPage";
 import { DashboardPage } from "./pages/tenant/DashboardPage";
 import { AgendaPage } from "./pages/tenant/AgendaPage";
 import { ClientsPage } from "./pages/tenant/ClientsPage";
@@ -33,8 +36,35 @@ function App() {
         <Route path="/auth/login" element={<LoginPage />} />
         <Route path="/auth/register" element={<RegisterPage />} />
         <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
-        {/* Backoffice da Barbearia (Tenant) — requer autenticação */}
+        {/* Onboarding & Configuração de Perfil / Barbearia */}
+        <Route
+          path="/onboarding/perfil"
+          element={
+            <ProtectedRoute allowIncompleteProfile allowIncompleteTenant>
+              <ProfileOnboardingPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/configuracoes/perfil"
+          element={
+            <ProtectedRoute allowIncompleteProfile allowIncompleteTenant>
+              <ProfileOnboardingPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/onboarding/barbearia"
+          element={
+            <ProtectedRoute allowIncompleteTenant>
+              <TenantOnboardingPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Backoffice da Barbearia (Tenant) — requer autenticação + perfil completo + barbearia configurada */}
         <Route
           element={
             <ProtectedRoute>
@@ -45,13 +75,13 @@ function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/agenda" element={<AgendaPage />} />
           <Route path="/clientes" element={<ClientsPage />} />
-          <Route path="/servicos" element={<ServicesPage />} />
-          <Route path="/profissionais" element={<ProfessionalsPage />} />
-          <Route path="/financeiro" element={<FinancialPage />} />
-          <Route path="/estoque" element={<StockPage />} />
-          <Route path="/relatorios" element={<ReportsPage />} />
-          <Route path="/configuracoes" element={<SettingsPage />} />
-          <Route path="/configuracoes/assinatura" element={<SettingsPage />} />
+          <Route path="/servicos" element={<ProtectedRoute allowedRoles={["owner", "admin", "receptionist"]}><ServicesPage /></ProtectedRoute>} />
+          <Route path="/profissionais" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><ProfessionalsPage /></ProtectedRoute>} />
+          <Route path="/financeiro" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><FinancialPage /></ProtectedRoute>} />
+          <Route path="/estoque" element={<ProtectedRoute allowedRoles={["owner", "admin", "receptionist"]}><StockPage /></ProtectedRoute>} />
+          <Route path="/relatorios" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><ReportsPage /></ProtectedRoute>} />
+          <Route path="/configuracoes" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><SettingsPage /></ProtectedRoute>} />
+          <Route path="/configuracoes/assinatura" element={<ProtectedRoute allowedRoles={["owner"]}><SettingsPage /></ProtectedRoute>} />
         </Route>
 
         {/* Painel Administrativo SaaS (Super Admin) — requer autenticação + is_platform_admin */}

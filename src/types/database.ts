@@ -104,12 +104,27 @@ export interface Database {
           id: string;
           email: string;
           full_name: string;
+          phone: string | null;
+          cpf: string | null;
           avatar_url: string | null;
           is_platform_admin: boolean;
           platform_role: string | null;
           created_at: string;
           updated_at: string;
         };
+        Insert: Partial<Omit<Database['public']['Tables']['profiles']['Row'], 'id' | 'created_at' | 'updated_at'>> & {
+          id: string;
+          email: string;
+          full_name: string;
+          phone?: string | null;
+          cpf?: string | null;
+          avatar_url?: string | null;
+          is_platform_admin?: boolean;
+          platform_role?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['profiles']['Row']>;
       };
       tenant_users: {
         Row: {
@@ -356,6 +371,50 @@ export interface Database {
           processed_at: string | null;
           created_at: string;
         };
+      };
+    };
+    Functions: {
+      create_tenant_for_current_user: {
+        Args: {
+          p_slug: string;
+          p_name: string;
+          p_phone: string;
+          p_email: string;
+          p_address?: string | null;
+        };
+        Returns: string;
+      };
+      get_public_catalog: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
+      get_available_slots: {
+        Args: { p_tenant_id: string; p_professional_id: string | null; p_service_id: string; p_date: string };
+        Returns: { slot_time: string; is_available: boolean }[];
+      };
+      book_public_appointment: {
+        Args: {
+          p_slug: string;
+          p_service_id: string;
+          p_professional_id: string | null;
+          p_date: string;
+          p_time: string;
+          p_customer_name: string;
+          p_customer_phone: string;
+          p_notes?: string | null;
+        };
+        Returns: Json;
+      };
+      create_internal_appointment: {
+        Args: {
+          p_tenant_id: string;
+          p_customer_id: string;
+          p_professional_id: string;
+          p_service_id: string;
+          p_start_time: string;
+          p_notes?: string | null;
+        };
+        Returns: string;
       };
     };
   };

@@ -4,50 +4,88 @@ import { useAuth } from "@/contexts/AuthContext";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  /** If true, requires the user to be a platform admin */
+  /** Se true, exige privilégios de Super Admin do SaaS */
   requireAdmin?: boolean;
+  /** Papéis de tenant permitidos (ex: ['owner', 'admin']) */
+  allowedRoles?: string[];
+  /** Se true, permite acesso mesmo com perfil incompleto (usado na própria rota de onboarding) */
+  allowIncompleteProfile?: boolean;
+  /** Se true, permite acesso mesmo sem barbearia configurada */
+  allowIncompleteTenant?: boolean;
 }
 
-/**
- * Route guard that checks authentication state and role.
- *
- * - Unauthenticated users → redirected to /auth/login
- * - requireAdmin=true but user is not admin → redirected to /dashboard
- * - Otherwise → renders children
- *
- * While auth is loading, shows a minimal loading spinner
- * that matches the app's dark theme.
- */
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
   requireAdmin = false,
+  allowedRoles,
+  allowIncompleteProfile = false,
+  allowIncompleteTenant = false,
 }) => {
-  const { user, profile, tenantMembership, loading } = useAuth();
+  const { user, profile, tenantMembership, tenant, memberships, loading, isProfileComplete, isTenantComplete } = useAuth();
   const location = useLocation();
 
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black text-lg animate-pulse">
+          <div className="w-10 h-10 rounded-xl bg-accent text-slate-950 flex items-center justify-center font-black text-lg animate-pulse">
             MB
           </div>
-          <span className="text-xs text-slate-400 font-medium">Carregando...</span>
+          <span className="text-xs text-slate-400 font-medium">Carregando permissões...</span>
         </div>
       </div>
     );
   }
 
+  // 1. Usuário não autenticado → Redireciona para login preservando a rota pretendida
   if (!user) {
     return <Navigate to="/auth/login" state={{ from: location }} replace />;
   }
 
-  if (requireAdmin && !profile?.is_platform_admin) {
-    return <Navigate to="/dashboard" replace />;
+  // 2. Verificação de Super Admin
+  if (requireAdmin) {
+    if (!profile?.is_platform_admin) {
+      return <Navigate to="/dashboard" replace />;
+    }
+    return <>{children}</>;
   }
 
-  if (!requireAdmin && !profile?.is_platform_admin && !tenantMembership?.is_active) {
-    return <Navigate to="/auth/login" replace />;
+  // Super Admin tem acesso liberado aos módulos gerais
+  if (profile?.is_platform_admin) {
+    return <>{children}</>;
+  }
+
+  // 3. Regra A: Usuário sem perfil completo → Onboarding de Perfil
+  if (!allowIncompleteProfile && !isProfileComplete) {
+    if (location.pathname !== "/onboarding/perfil") {
+      return <Navigate to="/onboarding/perfil" state={{ from: location }} replace />;
+    }
+  }
+
+  // 4. Regra B: Dono sem barbearia / dados incompletos
+  if (!allowIncompleteTenant) {
+    const activeMemberships = (memberships || []).filter((m) => m.is_active);
+
+    // Sem nenhuma barbearia vinculada
+    if (activeMemberships.length === 0) {
+      if (location.pathname !== "/onboarding/barbearia") {
+        return <Navigate to="/onboarding/barbearia" state={{ from: location }} replace />;
+      }
+    }
+
+    // Dono com dados da barbearia pendentes
+    if (tenantMembership?.role === "owner" && !isTenantComplete) {
+      if (location.pathname !== "/onboarding/barbearia") {
+        return <Navigate to="/onboarding/barbearia" state={{ from: location }} replace />;
+      }
+    }
+  }
+
+  // 5. Verificação de papéis permitidos dentro da barbearia
+  if (allowedRoles && tenantMembership) {
+    if (!allowedRoles.includes(tenantMembership.role)) {
+      return <Navigate to="/dashboard" replace />;
+    }
   }
 
   return <>{children}</>;

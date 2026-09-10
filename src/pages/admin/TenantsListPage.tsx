@@ -1,142 +1,699 @@
-import React, { useState } from "react";
-import { Building2, Search, ExternalLink, ShieldCheck, AlertCircle, Ban } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import {
+  Building2,
+  Search,
+  ExternalLink,
+  ShieldCheck,
+  AlertCircle,
+  Edit,
+  Copy,
+  Check,
+  X,
+  MapPin,
+  Phone,
+  Mail,
+  User,
+  Calendar,
+  Save,
+  Loader2,
+} from "lucide-react";
 import { Link } from "react-router-dom";
+import { supabase } from "@/lib/supabase";
+import { sanitizeSlug, validateSlugSyntax } from "@/lib/authRedirect";
+
+interface TenantDetail {
+  id: string;
+  name: string;
+  trade_name: string;
+  slug: string;
+  phone: string | null;
+  email: string | null;
+  status: string;
+  trial_ends_at: string | null;
+  primary_color: string | null;
+  secondary_color?: string | null;
+  logo_url?: string | null;
+  address_street: string | null;
+  address_number: string | null;
+  address_neighborhood: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  address_zip_code: string | null;
+  settings: any;
+  created_at: string;
+  owner_name: string;
+  owner_email: string;
+  owner_phone: string;
+  plan: string;
+  barbers_count: number;
+}
 
 export const TenantsListPage: React.FC = () => {
-  const [tenants, setTenants] = useState([
-    {
-      id: "t1",
-      name: "Barbearia Vintage Club",
-      slug: "vintage-barber",
-      owner: "Oliveira Santos",
-      phone: "(11) 98765-4321",
-      plan: "Plano Pro",
-      status: "active",
-      barbers_count: 3,
-    },
-    {
-      id: "t2",
-      name: "Dom Pedro Barbearia Tradicional",
-      slug: "dom-pedro",
-      owner: "Pedro Henrique",
-      phone: "(21) 99887-1122",
-      plan: "Plano Pro",
-      status: "active",
-      barbers_count: 5,
-    },
-    {
-      id: "t3",
-      name: "Studio Barber Prime",
-      slug: "barber-prime",
-      owner: "Marcos Lima",
-      phone: "(31) 98765-9988",
-      plan: "Plano Solo",
-      status: "trial",
-      barbers_count: 1,
-    },
-    {
-      id: "t4",
-      name: "Navalha de Ouro Barbearia",
-      slug: "navalha-ouro",
-      owner: "Gabriel Souza",
-      phone: "(41) 97766-5544",
-      plan: "Plano Pro",
-      status: "past_due",
-      barbers_count: 4,
-    },
-    {
-      id: "t5",
-      name: "Barbearia do Bairro Antigo",
-      slug: "bairro-antigo",
-      owner: "Antonio Silva",
-      phone: "(51) 96655-4433",
-      plan: "Plano Solo",
-      status: "suspended",
-      barbers_count: 1,
-    },
-  ]);
+  const [tenants, setTenants] = useState<TenantDetail[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const handleToggleStatus = (id: string) => {
-    setTenants((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? { ...t, status: t.status === "active" ? "suspended" : "active" }
-          : t
-      )
-    );
+  // Estado do modal de edição
+  const [selectedTenant, setSelectedTenant] = useState<TenantDetail | null>(null);
+  const [editFormData, setEditFormData] = useState<Partial<TenantDetail>>({});
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+
+  const loadTenants = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const { data, error: loadError } = await (supabase.from("tenants") as any)
+        .select(`
+          id, name, trade_name, slug, phone, email, status, trial_ends_at,
+          primary_color, secondary_color, logo_url,
+          address_street, address_number, address_neighborhood, address_city,
+          address_state, address_zip_code, settings, created_at,
+          tenant_users (
+            role,
+            is_active,
+            profiles (id, full_name, email)
+          ),
+          professionals (count),
+          subscriptions (
+            plans (name)
+          )
+        `)
+        .order("created_at", { ascending: false });
+
+      if (loadError) throw loadError;
+
+      const formatted: TenantDetail[] = (data || []).map((t: any) => {
+        const ownerMembership = t.tenant_users?.find((u: any) => u.role === "owner");
+        const ownerProfile = ownerMembership?.profiles;
+
+        return {
+          ...t,
+          owner_name: ownerProfile?.full_name || "Não informado",
+          owner_email: ownerProfile?.email || "—",
+          owner_phone: t.phone || "—",
+          plan: t.subscriptions?.[0]?.plans?.name || (t.status === "trial" ? "Trial Grátis" : "Sem Plano"),
+          barbers_count: t.professionals?.[0]?.count || 0,
+        };
+      });
+
+      setTenants(formatted);
+    } catch (err: any) {
+      console.error("Erro ao carregar tenants:", err);
+      setError(err?.message || "Não foi possível carregar as barbearias.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTenants();
+  }, []);
+
+  const handleToggleStatus = async (id: string, currentStatus: string) => {
+    if (updatingId) return;
+    const nextStatus = currentStatus === "active" ? "suspended" : "active";
+    setUpdatingId(id);
+    setError(null);
+
+    try {
+      const { error: updateError } = await (supabase.from("tenants") as any)
+        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq("id", id);
+
+      if (updateError) throw updateError;
+
+      setTenants((prev) =>
+        prev.map((t) => (t.id === id ? { ...t, status: nextStatus } : t))
+      );
+      if (selectedTenant && selectedTenant.id === id) {
+        setSelectedTenant((prev) => (prev ? { ...prev, status: nextStatus } : null));
+      }
+    } catch (err: any) {
+      setError(err?.message || "Não foi possível alterar o status da barbearia.");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleOpenEditModal = (tenant: TenantDetail) => {
+    setSelectedTenant(tenant);
+    setEditFormData({
+      name: tenant.name || "",
+      trade_name: tenant.trade_name || "",
+      slug: tenant.slug || "",
+      phone: tenant.phone || "",
+      email: tenant.email || "",
+      address_street: tenant.address_street || "",
+      address_number: tenant.address_number || "",
+      address_neighborhood: tenant.address_neighborhood || "",
+      address_city: tenant.address_city || "",
+      address_state: tenant.address_state || "",
+      address_zip_code: tenant.address_zip_code || "",
+      status: tenant.status || "active",
+      primary_color: tenant.primary_color || "#F28322",
+    });
+    setEditError(null);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTenant) return;
+
+    setEditError(null);
+
+    const cleanSlug = sanitizeSlug(editFormData.slug || "");
+    const slugCheck = validateSlugSyntax(cleanSlug);
+    if (!slugCheck.valid) {
+      setEditError(slugCheck.error || "Slug inválido");
+      return;
+    }
+
+    setSavingEdit(true);
+
+    try {
+      // 1. Verificar se o slug já existe em outro tenant
+      const { data: duplicate } = await (supabase.from("tenants") as any)
+        .select("id")
+        .eq("slug", cleanSlug)
+        .neq("id", selectedTenant.id)
+        .maybeSingle();
+
+      if (duplicate) {
+        setEditError("Este slug já está sendo utilizado por outra barbearia.");
+        setSavingEdit(false);
+        return;
+      }
+
+      // 2. Persistir alterações no Supabase
+      const payload = {
+        name: (editFormData.name || "").trim(),
+        trade_name: (editFormData.trade_name || "").trim() || (editFormData.name || "").trim(),
+        slug: cleanSlug,
+        phone: (editFormData.phone || "").trim() || null,
+        email: (editFormData.email || "").trim() || null,
+        address_street: (editFormData.address_street || "").trim() || null,
+        address_number: (editFormData.address_number || "").trim() || null,
+        address_neighborhood: (editFormData.address_neighborhood || "").trim() || null,
+        address_city: (editFormData.address_city || "").trim() || null,
+        address_state: (editFormData.address_state || "").trim() || null,
+        address_zip_code: (editFormData.address_zip_code || "").trim() || null,
+        status: editFormData.status || selectedTenant.status,
+        primary_color: editFormData.primary_color || "#F28322",
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error: updateError } = await (supabase.from("tenants") as any)
+        .update(payload)
+        .eq("id", selectedTenant.id);
+
+      if (updateError) throw updateError;
+
+      // Atualizar lista local
+      setTenants((prev) =>
+        prev.map((t) =>
+          t.id === selectedTenant.id ? { ...t, ...payload, slug: cleanSlug } : t
+        )
+      );
+
+      setSelectedTenant(null);
+    } catch (err: any) {
+      console.error("Erro ao atualizar barbearia:", err);
+      setEditError(err?.message || "Não foi possível salvar as alterações.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleCopyLink = (slug: string) => {
+    const url = `https://www.mbarber.com.br/${slug}`;
+    navigator.clipboard.writeText(url);
+    setCopiedSlug(slug);
+    setTimeout(() => setCopiedSlug(null), 2500);
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
-        return <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Ativo</span>;
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            Ativo
+          </span>
+        );
       case "trial":
-        return <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30">Trial (12 dias)</span>;
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold surface-accent-soft text-primary-on-dark border border-accent">
+            Trial
+          </span>
+        );
       case "past_due":
-        return <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-500/20 text-red-400 border border-red-500/30">Inadimplente</span>;
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+            Inadimplente
+          </span>
+        );
       case "suspended":
-        return <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-700 text-slate-400">Suspenso</span>;
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-500/20 text-red-400 border border-red-500/30">
+            Suspenso
+          </span>
+        );
+      case "canceled":
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-700 text-slate-400">
+            Cancelado
+          </span>
+        );
       default:
         return null;
     }
   };
 
+  const filteredTenants = tenants.filter((t) => {
+    const term = searchTerm.toLowerCase();
+    return (
+      t.name.toLowerCase().includes(term) ||
+      t.slug.toLowerCase().includes(term) ||
+      t.owner_name.toLowerCase().includes(term) ||
+      t.owner_email.toLowerCase().includes(term)
+    );
+  });
+
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {/* Cabeçalho */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-950 p-6 rounded-2xl border border-slate-800 shadow-sm">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-white">Barbearias Cadastradas (Tenants)</h2>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Gestão de contas, status de assinatura e controle de suspensão/reativação
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-black text-white">Barbearias Cadastradas</h2>
+            <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-xs font-bold text-slate-300">
+              {tenants.length}
+            </span>
+          </div>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+            Gestão de tenants, edição de dados cadastrais, links públicos e controle de status
           </p>
+        </div>
+
+        {/* Busca */}
+        <div className="relative w-full sm:w-72">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+          <input
+            type="text"
+            placeholder="Buscar por nome, slug ou dono..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-accent"
+          />
         </div>
       </div>
 
-      <div className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden">
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Tabela de Barbearias */}
+      <div className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="bg-slate-900 text-slate-400 font-semibold text-xs border-b border-slate-800">
               <tr>
-                <th className="py-3.5 px-4">Barbearia</th>
-                <th className="py-3.5 px-4">Slug Público</th>
+                <th className="py-3.5 px-4">Barbearia / Nome Fantasia</th>
+                <th className="py-3.5 px-4">Link Público (Slug)</th>
                 <th className="py-3.5 px-4">Proprietário</th>
+                <th className="py-3.5 px-4">Contato</th>
                 <th className="py-3.5 px-4">Plano</th>
-                <th className="py-3.5 px-4">Barbeiros</th>
                 <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4 text-right">Ação</th>
+                <th className="py-3.5 px-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-900 text-slate-300">
-              {tenants.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-900/50 transition">
-                  <td className="py-3.5 px-4 font-bold text-white">{t.name}</td>
-                  <td className="py-3.5 px-4 font-mono text-xs text-amber-400">
-                    <Link to={`/${t.slug}`} target="_blank" className="hover:underline flex items-center gap-1">
-                      /{t.slug} <ExternalLink className="w-3 h-3" />
-                    </Link>
-                  </td>
-                  <td className="py-3.5 px-4 text-xs">{t.owner}</td>
-                  <td className="py-3.5 px-4 text-xs font-semibold">{t.plan}</td>
-                  <td className="py-3.5 px-4 text-xs">{t.barbers_count} cadeiras</td>
-                  <td className="py-3.5 px-4">{getStatusBadge(t.status)}</td>
-                  <td className="py-3.5 px-4 text-right space-x-2">
-                    <button
-                      onClick={() => handleToggleStatus(t.id)}
-                      className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
-                        t.status === "active"
-                          ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30"
-                          : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30"
-                      }`}
-                    >
-                      {t.status === "active" ? "Suspender" : "Reativar"}
-                    </button>
+              {loading && (
+                <tr>
+                  <td colSpan={7} className="p-10 text-center text-slate-400">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-accent" />
+                    Carregando barbearias cadastradas...
                   </td>
                 </tr>
-              ))}
+              )}
+
+              {!loading && filteredTenants.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="p-8 text-center text-slate-400 text-xs">
+                    Nenhuma barbearia encontrada para esta busca.
+                  </td>
+                </tr>
+              )}
+
+              {!loading &&
+                filteredTenants.map((t) => (
+                  <tr key={t.id} className="hover:bg-slate-900/40 transition">
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-white leading-snug">{t.name}</div>
+                      {t.trade_name && t.trade_name !== t.name && (
+                        <div className="text-xs text-slate-400">{t.trade_name}</div>
+                      )}
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-1.5 font-mono text-xs text-accent">
+                        <Link
+                          to={`/${t.slug}`}
+                          target="_blank"
+                          className="hover:underline flex items-center gap-1"
+                        >
+                          /{t.slug} <ExternalLink className="w-3 h-3" />
+                        </Link>
+                        <button
+                          onClick={() => handleCopyLink(t.slug)}
+                          title="Copiar link"
+                          className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                        >
+                          {copiedSlug === t.slug ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-4 text-xs">
+                      <div className="font-medium text-slate-200">{t.owner_name}</div>
+                      <div className="text-[11px] text-slate-400 truncate max-w-[150px]">
+                        {t.owner_email}
+                      </div>
+                    </td>
+
+                    <td className="py-3.5 px-4 text-xs text-slate-400">
+                      <div>{t.phone || "—"}</div>
+                    </td>
+
+                    <td className="py-3.5 px-4 text-xs font-semibold text-slate-200">
+                      {t.plan}
+                    </td>
+
+                    <td className="py-3.5 px-4">{getStatusBadge(t.status)}</td>
+
+                    <td className="py-3.5 px-4 text-right space-x-2 whitespace-nowrap">
+                      <button
+                        onClick={() => handleOpenEditModal(t)}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-accent/10 hover:bg-accent/20 text-accent border border-accent/30 transition inline-flex items-center gap-1"
+                      >
+                        <Edit className="w-3 h-3" />
+                        <span>Editar</span>
+                      </button>
+
+                      <button
+                        disabled={updatingId === t.id}
+                        onClick={() => handleToggleStatus(t.id, t.status)}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition disabled:opacity-50 ${
+                          t.status === "active"
+                            ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30"
+                            : "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30"
+                        }`}
+                      >
+                        {updatingId === t.id
+                          ? "..."
+                          : t.status === "active"
+                          ? "Suspender"
+                          : "Reativar"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* MODAL DE VISUALIZAÇÃO & EDIÇÃO PELO SUPER ADMIN */}
+      {selectedTenant && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl my-8 relative">
+            {/* Fechar */}
+            <button
+              onClick={() => setSelectedTenant(null)}
+              className="absolute right-5 top-5 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Cabeçalho do Modal */}
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold">
+                  Painel Super Admin
+                </span>
+                {getStatusBadge(editFormData.status || selectedTenant.status)}
+              </div>
+              <h3 className="text-xl font-black text-white">
+                Editar Cadastro da Barbearia
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                ID do Tenant: <code className="text-slate-300 font-mono">{selectedTenant.id}</code>
+              </p>
+            </div>
+
+            {/* Links Rápidos */}
+            <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2 mb-6">
+              <div className="flex items-center gap-2 truncate">
+                <span className="text-xs text-slate-400">Link Público:</span>
+                <span className="text-xs font-mono text-accent font-bold truncate">
+                  https://www.mbarber.com.br/{editFormData.slug || selectedTenant.slug}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleCopyLink(editFormData.slug || selectedTenant.slug)}
+                  className="px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1"
+                >
+                  <Copy className="w-3 h-3" />
+                  <span>{copiedSlug ? "Copiado!" : "Copiar"}</span>
+                </button>
+                <Link
+                  to={`/${editFormData.slug || selectedTenant.slug}`}
+                  target="_blank"
+                  className="px-2.5 py-1 text-xs rounded-lg bg-accent/20 hover:bg-accent/30 text-accent border border-accent/40 transition flex items-center gap-1"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>Abrir</span>
+                </Link>
+              </div>
+            </div>
+
+            {editError && (
+              <div className="mb-5 p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center gap-2.5 text-xs text-red-300">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              {/* Dados Básicos */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Nome da Barbearia *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.name || ""}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Nome Fantasia
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.trade_name || ""}
+                    onChange={(e) => setEditFormData({ ...editFormData, trade_name: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Slug Público *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.slug || ""}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, slug: sanitizeSlug(e.target.value) })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm font-mono text-accent focus:outline-none focus:border-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Status da Assinatura
+                  </label>
+                  <select
+                    value={editFormData.status || "active"}
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-accent"
+                  >
+                    <option value="active">Ativo (Regular)</option>
+                    <option value="trial">Trial (Período de Testes)</option>
+                    <option value="past_due">Inadimplente</option>
+                    <option value="suspended">Suspenso</option>
+                    <option value="canceled">Cancelado</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Contatos */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Telefone Comercial
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.phone || ""}
+                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    E-mail Comercial
+                  </label>
+                  <input
+                    type="email"
+                    value={editFormData.email || ""}
+                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              {/* Endereço */}
+              <div className="p-3.5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <span className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-accent" /> Endereço
+                </span>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <input
+                      type="text"
+                      placeholder="Rua / Logradouro"
+                      value={editFormData.address_street || ""}
+                      onChange={(e) =>
+                        setEditFormData({ ...editFormData, address_street: e.target.value })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      placeholder="Número"
+                      value={editFormData.address_number || ""}
+                      onChange={(e) =>
+                        setEditFormData({ ...editFormData, address_number: e.target.value })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-accent"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <input
+                    type="text"
+                    placeholder="Bairro"
+                    value={editFormData.address_neighborhood || ""}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, address_neighborhood: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-accent"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Cidade"
+                    value={editFormData.address_city || ""}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, address_city: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-accent"
+                  />
+                  <input
+                    type="text"
+                    placeholder="UF (ex: SP)"
+                    maxLength={2}
+                    value={editFormData.address_state || ""}
+                    onChange={(e) =>
+                      setEditFormData({ ...editFormData, address_state: e.target.value.toUpperCase() })
+                    }
+                    className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:border-accent"
+                  />
+                </div>
+              </div>
+
+              {/* Informações do Proprietário (Somente Leitura - Segurança) */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800 text-xs text-slate-400 space-y-1">
+                <div className="font-bold text-slate-300 flex items-center gap-1.5 mb-1">
+                  <User className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Dados do Proprietário (Somente Leitura)</span>
+                </div>
+                <p>Nome: <strong className="text-white">{selectedTenant.owner_name}</strong></p>
+                <p>E-mail: <strong className="text-white">{selectedTenant.owner_email}</strong></p>
+                <p>Telefone: <strong className="text-white">{selectedTenant.owner_phone}</strong></p>
+                <p className="text-[11px] text-slate-500 pt-1">
+                  * Por segurança, senhas de usuários não são acessíveis nem alteradas pelo Super Admin.
+                </p>
+              </div>
+
+              {/* Botões do Formulário */}
+              <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setSelectedTenant(null)}
+                  disabled={savingEdit}
+                  className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-950 text-slate-300 text-xs font-semibold hover:bg-slate-800 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="px-5 py-2.5 rounded-xl bg-accent hover-bg-accent text-slate-950 font-bold text-xs transition shadow-md shadow-accent flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {savingEdit ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Salvando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Salvar Alterações</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
