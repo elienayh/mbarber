@@ -1536,5 +1536,44 @@ CREATE POLICY business_hours_public_select ON public.business_hours
   FOR SELECT TO anon, authenticated
   USING (true);
 
+-- 9. Exclusão Ordenada e Segura de Barbearia pelo Super Admin
+DROP POLICY IF EXISTS tenants_delete ON public.tenants;
+CREATE POLICY tenants_delete ON public.tenants
+  FOR DELETE USING (
+    public.is_platform_admin()
+  );
+
+CREATE OR REPLACE FUNCTION public.delete_tenant_by_admin(
+  p_tenant_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF NOT public.is_platform_admin() THEN
+    RAISE EXCEPTION 'Apenas administradores da plataforma podem excluir barbearias.';
+  END IF;
+
+  DELETE FROM public.appointments WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.appointment_series WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.schedule_blocks WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.product_movements WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.products WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.services WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.professionals WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.customers WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.business_hours WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.subscriptions WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.tenant_users WHERE tenant_id = p_tenant_id;
+  DELETE FROM public.tenants WHERE id = p_tenant_id;
+
+  RETURN jsonb_build_object('success', true, 'deleted_tenant_id', p_tenant_id);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.delete_tenant_by_admin(UUID) TO authenticated;
+
 -- Notificar PostgREST para recarregar o cache
 NOTIFY pgrst, 'reload schema';

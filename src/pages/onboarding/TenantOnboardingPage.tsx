@@ -384,8 +384,34 @@ export const TenantOnboardingPage: React.FC = () => {
         console.warn("Aviso ao sincronizar perfil pré-onboarding:", profileSyncErr);
       }
 
-      // Se o tenant já existir (ex: atualização), atualiza diretamente
-      if (tenant?.id) {
+      // 3. Determinar se o usuário já possui um tenant para evitar duplicações
+      let targetTenantId = tenant?.id || null;
+
+      if (!targetTenantId) {
+        // Verificar em tenant_users
+        const { data: existingMemberships } = await (supabase.from("tenant_users") as any)
+          .select("tenant_id, role")
+          .eq("user_id", authenticatedUser.id)
+          .limit(1);
+
+        if (existingMemberships && existingMemberships.length > 0) {
+          targetTenantId = existingMemberships[0].tenant_id;
+        } else {
+          // Verificar em professionals
+          const { data: proRecord } = await (supabase.from("professionals") as any)
+            .select("tenant_id")
+            .eq("user_id", authenticatedUser.id)
+            .limit(1)
+            .maybeSingle();
+
+          if (proRecord?.tenant_id) {
+            targetTenantId = proRecord.tenant_id;
+          }
+        }
+      }
+
+      if (targetTenantId) {
+        // Se o tenant já existir (atualização ou reaproveitamento), atualiza os dados
         const { error: updateError } = await (supabase.from("tenants") as any)
           .update({
             name: cleanName,
@@ -401,62 +427,79 @@ export const TenantOnboardingPage: React.FC = () => {
             address_zip_code: zipCode.trim() || null,
             updated_at: new Date().toISOString(),
           })
-          .eq("id", tenant.id);
+          .eq("id", targetTenantId);
 
         if (updateError) throw updateError;
+
+        // Garantir vínculo explícito como owner em tenant_users
+        await (supabase.from("tenant_users") as any).upsert(
+          {
+            tenant_id: targetTenantId,
+            user_id: authenticatedUser.id,
+            role: "owner",
+            is_active: true,
+          },
+          { onConflict: "tenant_id,user_id" }
+        );
+
+        localStorage.setItem("mb_active_tenant_id", targetTenantId);
       } else {
-        // Idempotência: verificar se o usuário já possui barbearia criada (ex: recarregamento ou retry)
-        const { data: existingMemberships } = await (supabase.from("tenant_users") as any)
-          .select("tenant_id, role")
-          .eq("user_id", authenticatedUser.id)
-          .eq("role", "owner")
-          .limit(1);
-
-        if (existingMemberships && existingMemberships.length > 0) {
-          const existingTenantId = existingMemberships[0].tenant_id;
-          localStorage.setItem("mb_active_tenant_id", existingTenantId);
-        } else {
-          // Criar novo tenant via RPC atômica
-          const { data: newTenantId, error: rpcError } = await (supabase.rpc as any)(
-            "create_tenant_for_current_user",
-            {
-              p_name: cleanName,
-              p_trade_name: cleanName,
-              p_slug: cleanSlug,
-              p_phone: phone.trim(),
-              p_email: email.trim() || null,
-              p_address_street: street.trim() || null,
-              p_address_number: number.trim() || null,
-              p_address_neighborhood: neighborhood.trim() || null,
-              p_address_city: city.trim() || null,
-              p_address_state: state || null,
-              p_address_zip_code: zipCode.trim() || null,
-              p_logo_url: null,
-            }
-          );
-
-          if (rpcError) throw rpcError;
-          if (newTenantId) {
-            localStorage.setItem("mb_active_tenant_id", newTenantId);
+        // Criar novo tenant via RPC atômica caso o usuário ainda não possua barbearia
+        const { data: newTenantId, error: rpcError } = await (supabase.rpc as any)(
+          "create_tenant_for_current_user",
+          {
+            p_name: cleanName,
+            p_trade_name: cleanName,
+            p_slug: cleanSlug,
+            p_phone: phone.trim(),
+            p_email: email.trim() || null,
+            p_address_street: street.trim() || null,
+            p_address_number: number.trim() || null,
+            p_address_neighborhood: neighborhood.trim() || null,
+            p_address_city: city.trim() || null,
+            p_address_state: state || null,
+            p_address_zip_code: zipCode.trim() || null,
+            p_logo_url: null,
           }
+        );
+
+        if (rpcError) throw rpcError;
+        targetTenantId = newTenantId;
+
+        if (targetTenantId) {
+          localStorage.setItem("mb_active_tenant_id", targetTenantId);
+
+          // Garantir persistência do vínculo como owner em tenant_users
+          await (supabase.from("tenant_users") as any).upsert(
+            {
+              tenant_id: targetTenantId,
+              user_id: authenticatedUser.id,
+              role: "owner",
+              is_active: true,
+            },
+            { onConflict: "tenant_id,user_id" }
+          );
         }
       }
 
-      // Atualizar o contexto e garantir que o estado local reflita o novo tenant
+      // Sincronizar metadados do auth para garantir que telefone esteja disponível em toda a sessão
+      try {
+        await supabase.auth.updateUser({
+          data: { phone: phone.trim(), full_name: profile?.full_name || authenticatedUser.user_metadata?.full_name || cleanName },
+        });
+      } catch (authMetaErr) {
+        console.warn("Aviso ao atualizar user_metadata:", authMetaErr);
+      }
+
+      // Atualizar o contexto global imediatamente com os novos dados
       const freshData = await refreshUserData(authenticatedUser.id);
       if (freshData?.tenant?.id) {
         localStorage.setItem("mb_active_tenant_id", freshData.tenant.id);
       }
 
-      // Redirecionamento confiável para o painel
-      const fromParam = (location.state as any)?.from?.pathname || sessionStorage.getItem("mb_auth_from");
-      sessionStorage.removeItem("mb_auth_from");
-
-      if (fromParam && !fromParam.startsWith("/auth") && !fromParam.startsWith("/onboarding") && fromParam !== "/") {
-        navigate(fromParam, { replace: true });
-      } else {
-        navigate("/dashboard", { replace: true });
-      }
+      // Exibir tela de sucesso com link gerado
+      setCreatedSlug(cleanSlug);
+      setSubmitting(false);
     } catch (err: any) {
       console.error("Erro ao salvar barbearia:", err);
       setError(err?.message || "Não foi possível cadastrar a barbearia. Tente novamente.");
@@ -464,9 +507,13 @@ export const TenantOnboardingPage: React.FC = () => {
     }
   };
 
-  const handleFinishAndGoToDashboard = () => {
+  const handleFinishAndGoToDashboard = async () => {
     const fromParam = (location.state as any)?.from?.pathname || sessionStorage.getItem("mb_auth_from");
     sessionStorage.removeItem("mb_auth_from");
+
+    if (user?.id) {
+      await refreshUserData(user.id);
+    }
 
     if (fromParam && !fromParam.startsWith("/auth") && !fromParam.startsWith("/onboarding") && fromParam !== "/") {
       navigate(fromParam, { replace: true });

@@ -49,9 +49,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const fetchUserData = useCallback(async (userId: string) => {
     try {
-      // 1. Buscar perfil da tabela public.profiles (utilizando colunas nativas existentes)
+      // 1. Buscar perfil da tabela public.profiles (incluindo phone e cpf)
       const { data: profileData, error: profileError } = await (supabase.from("profiles") as any)
-        .select("id, email, full_name, avatar_url, is_platform_admin, platform_role, created_at, updated_at")
+        .select("id, email, full_name, phone, cpf, avatar_url, is_platform_admin, platform_role, created_at, updated_at")
         .eq("id", userId)
         .maybeSingle();
 
@@ -70,8 +70,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           id: profileData.id,
           email: profileData.email || authUser?.email || "",
           full_name: profileData.full_name || userMeta.full_name || userMeta.name || "",
-          phone: userMeta.phone || null,
-          cpf: userMeta.cpf || null,
+          phone: profileData.phone || userMeta.phone || null,
+          cpf: profileData.cpf || userMeta.cpf || null,
           avatar_url: profileData.avatar_url || userMeta.avatar_url || userMeta.picture || null,
           is_platform_admin: !!profileData.is_platform_admin,
           platform_role: profileData.platform_role || null,
@@ -95,6 +95,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             id: profile.id,
             email: profile.email,
             full_name: profile.full_name,
+            phone: profile.phone,
+            cpf: profile.cpf,
             avatar_url: profile.avatar_url,
           });
         } catch (upsertErr) {
@@ -103,7 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // 2. Buscar memberships (NÃO utilizar maybeSingle, pois o usuário pode ter mais de uma barbearia)
-      const { data: rawMemberships, error: membershipsError } = await (supabase.from("tenant_users") as any)
+      let { data: rawMemberships, error: membershipsError } = await (supabase.from("tenant_users") as any)
         .select(`
           id,
           tenant_id,
@@ -121,6 +123,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (membershipsError) {
         console.error("Erro ao carregar memberships:", membershipsError);
+      }
+
+      // Auto-reparação / Self-healing: se não houver memberships em tenant_users, verificar se o usuário está em professionals
+      if (!rawMemberships || rawMemberships.length === 0) {
+        try {
+          const { data: proData } = await (supabase.from("professionals") as any)
+            .select("tenant_id")
+            .eq("user_id", userId)
+            .limit(1)
+            .maybeSingle();
+
+          if (proData?.tenant_id) {
+            await (supabase.from("tenant_users") as any).upsert(
+              {
+                tenant_id: proData.tenant_id,
+                user_id: userId,
+                role: "owner",
+                is_active: true,
+              },
+              { onConflict: "tenant_id,user_id" }
+            );
+
+            const { data: healedMemberships } = await (supabase.from("tenant_users") as any)
+              .select(`
+                id,
+                tenant_id,
+                role,
+                is_active,
+                tenants (
+                  id, slug, name, trade_name, phone, email, status, trial_ends_at,
+                  primary_color, secondary_color, logo_url, address_street,
+                  address_number, address_neighborhood, address_city,
+                  address_state, address_zip_code, settings, created_at, updated_at
+                )
+              `)
+              .eq("user_id", userId)
+              .eq("is_active", true);
+
+            if (healedMemberships && healedMemberships.length > 0) {
+              rawMemberships = healedMemberships;
+            }
+          }
+        } catch (healErr) {
+          console.warn("Tentativa de auto-cura de membership em professionals:", healErr);
+        }
       }
 
       let memberships: TenantMembership[] = (rawMemberships || []).map((m: any) => {
