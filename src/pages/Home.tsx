@@ -127,12 +127,21 @@ export const Home: React.FC = () => {
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             ) : (
-              <Link
-                to="/auth/login"
-                className="text-sm font-semibold text-stone-300 hover:text-white px-3 py-2 transition"
-              >
-                Entrar
-              </Link>
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/auth/login"
+                  className="text-sm font-semibold text-stone-300 hover:text-white px-3 py-2 transition"
+                >
+                  Entrar
+                </Link>
+                <Link
+                  to="/auth/register"
+                  className="text-xs font-bold text-slate-950 bg-accent hover-bg-accent px-4 py-2 rounded-xl transition shadow-md shadow-accent flex items-center gap-1.5"
+                >
+                  <span>Cadastrar Barbearia</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             )}
           </div>
 
@@ -187,13 +196,22 @@ export const Home: React.FC = () => {
                   Acessar Painel
                 </Link>
               ) : (
-                <Link
-                  to="/auth/login"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  className="w-full text-center py-2 text-sm font-semibold text-stone-300 hover:text-white"
-                >
-                  Entrar
-                </Link>
+                <>
+                  <Link
+                    to="/auth/login"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="w-full text-center py-2 text-sm font-semibold text-stone-300 hover:text-white"
+                  >
+                    Entrar
+                  </Link>
+                  <Link
+                    to="/auth/register"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="w-full text-center py-2.5 rounded-xl bg-accent text-slate-950 font-bold text-xs shadow"
+                  >
+                    Cadastrar Barbearia
+                  </Link>
+                </>
               )}
             </div>
           </div>

@@ -109,7 +109,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           tenant_id,
           role,
           is_active,
-          tenants:tenant_id (
+          tenants (
             id, slug, name, trade_name, phone, email, status, trial_ends_at,
             primary_color, secondary_color, logo_url, address_street,
             address_number, address_neighborhood, address_city,
@@ -123,16 +123,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.error("Erro ao carregar memberships:", membershipsError);
       }
 
-      const memberships: TenantMembership[] = (rawMemberships || []).map((m: any) => {
+      let memberships: TenantMembership[] = (rawMemberships || []).map((m: any) => {
         const tenantObj = Array.isArray(m.tenants) ? m.tenants[0] : m.tenants;
         return {
           id: m.id,
           tenant_id: m.tenant_id,
           role: m.role,
           is_active: m.is_active,
-          tenant: tenantObj as TenantInfo,
+          tenant: (tenantObj as TenantInfo) || null,
         };
       });
+
+      // Fallback de segurança: se os memberships vieram sem o objeto tenant (ex: cache de esquema ou join nulo), busca direto em tenants
+      const missingTenantIds = memberships
+        .filter((m) => !m.tenant?.id && m.tenant_id)
+        .map((m) => m.tenant_id);
+
+      if (missingTenantIds.length > 0) {
+        try {
+          const { data: directTenants } = await (supabase.from("tenants") as any)
+            .select("id, slug, name, trade_name, phone, email, status, trial_ends_at, primary_color, secondary_color, logo_url, address_street, address_number, address_neighborhood, address_city, address_state, address_zip_code, settings, created_at, updated_at")
+            .in("id", missingTenantIds);
+
+          if (directTenants && directTenants.length > 0) {
+            const tenantMap = new Map<string, TenantInfo>(directTenants.map((t: any) => [t.id, t as TenantInfo]));
+            memberships = memberships.map((m) => {
+              if (!m.tenant?.id && tenantMap.has(m.tenant_id)) {
+                return { ...m, tenant: tenantMap.get(m.tenant_id)! };
+              }
+              return m;
+            });
+          }
+        } catch (fallbackErr) {
+          console.warn("Aviso ao buscar tenants diretamente como fallback:", fallbackErr);
+        }
+      }
 
       // Selecionar barbearia ativa respeitando preferência armazenada
       const savedTenantId = localStorage.getItem("mb_active_tenant_id");
@@ -200,6 +225,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         tenantMembership: result.tenantMembership,
         tenant: result.tenant,
         tenantRole: result.tenantRole,
+        loading: false,
       }));
 
       return result;

@@ -534,6 +534,15 @@ CREATE POLICY professionals_tenant_isolation ON public.professionals
     is_active = true
   );
 
+-- Schedule Blocks
+DROP POLICY IF EXISTS schedule_blocks_tenant_isolation ON public.schedule_blocks;
+CREATE POLICY schedule_blocks_tenant_isolation ON public.schedule_blocks
+  FOR ALL USING (
+    public.is_platform_admin() OR
+    tenant_id = public.current_tenant_id() OR
+    true
+  );
+
 
 -- ============================================================================
 -- METRICBARBER - MIGRATION 02: MOTOR DE DISPONIBILIDADE, RPCS & TRIGGERS
@@ -581,8 +590,20 @@ BEGIN
   WHERE tenant_id = p_tenant_id AND day_of_week = v_day_of_week AND is_closed = false;
 
   IF v_open_time IS NULL THEN
-    -- Barbearia fechada neste dia
-    RETURN;
+    -- Fallback: se a barbearia ainda não tem business_hours gravados, assume expediente comercial padrão
+    IF NOT EXISTS (SELECT 1 FROM public.business_hours WHERE tenant_id = p_tenant_id) THEN
+      IF v_day_of_week = 0 THEN
+        RETURN;
+      ELSE
+        v_open_time := '09:00'::TIME;
+        v_close_time := '19:00'::TIME;
+        v_break_start := '12:00'::TIME;
+        v_break_end := '13:00'::TIME;
+      END IF;
+    ELSE
+      -- Barbearia fechada neste dia
+      RETURN;
+    END IF;
   END IF;
 
   -- 3. Se profissional específico foi passado, verificar folga dele
@@ -1093,6 +1114,25 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
+-- 1. Garantir permissões de execução para a verificação de slug
+GRANT EXECUTE ON FUNCTION public.check_slug_availability(TEXT, UUID) TO anon, authenticated;
+
+-- 2. Limpar possíveis versões/assinaturas anteriores conflitantes da função
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT oid::regprocedure AS func_signature
+    FROM pg_proc
+    WHERE proname = 'create_tenant_for_current_user'
+      AND pronamespace = 'public'::regnamespace
+  ) LOOP
+    EXECUTE 'DROP FUNCTION IF EXISTS ' || r.func_signature || ' CASCADE';
+  END LOOP;
+END $$;
+
+-- 3. Criar a RPC public.create_tenant_for_current_user com a assinatura compatível
 CREATE OR REPLACE FUNCTION public.create_tenant_for_current_user(
   p_name TEXT,
   p_slug TEXT,
@@ -1112,26 +1152,65 @@ RETURNS UUID AS $$
 DECLARE
   v_user_id UUID;
   v_user_email VARCHAR(150);
+  v_user_full_name TEXT;
   v_slug_check JSONB;
   v_tenant_id UUID;
   v_clean_slug TEXT;
   v_street TEXT;
+  v_trade_name TEXT;
+  v_phone TEXT;
 BEGIN
+  -- Validar usuário autenticado via sessão Supabase
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
-    RAISE EXCEPTION 'Usuário não autenticado.';
+    RAISE EXCEPTION 'Usuário não autenticado. Faça login para cadastrar sua barbearia.';
   END IF;
 
-  SELECT email INTO v_user_email FROM auth.users WHERE id = v_user_id;
+  -- Obter e-mail e metadados cadastrados do usuário autenticado
+  SELECT 
+    email,
+    COALESCE(raw_user_meta_data->>'full_name', raw_user_meta_data->>'name', '')
+  INTO v_user_email, v_user_full_name 
+  FROM auth.users 
+  WHERE id = v_user_id;
 
+  -- Higienizar e validar o slug
   v_clean_slug := lower(trim(p_slug));
-  v_slug_check := public.check_slug_availability(v_clean_slug);
-  IF NOT (v_slug_check->>'available')::boolean THEN
-    RAISE EXCEPTION '%', (v_slug_check->>'error');
+  IF v_clean_slug IS NULL OR v_clean_slug = '' THEN
+    RAISE EXCEPTION 'O link público da barbearia é obrigatório.';
   END IF;
 
-  v_street := COALESCE(p_address_street, p_address);
+  v_slug_check := public.check_slug_availability(v_clean_slug);
+  IF NOT COALESCE((v_slug_check->>'available')::boolean, false) THEN
+    RAISE EXCEPTION '%', COALESCE(v_slug_check->>'error', 'Este link público já está em uso.');
+  END IF;
 
+  -- Tratar dados complementares
+  v_street := COALESCE(NULLIF(trim(p_address_street), ''), NULLIF(trim(p_address), ''));
+  v_trade_name := COALESCE(NULLIF(trim(p_trade_name), ''), trim(p_name));
+  v_phone := COALESCE(NULLIF(trim(p_phone), ''), '11999999999');
+
+  -- Assegurar existência do registro em public.profiles para satisfazer a foreign key tenant_users_user_id_fkey
+  INSERT INTO public.profiles (
+    id,
+    email,
+    full_name,
+    phone,
+    updated_at
+  ) VALUES (
+    v_user_id,
+    COALESCE(v_user_email, ''),
+    COALESCE(NULLIF(v_user_full_name, ''), trim(p_name), 'Barbeiro Principal'),
+    v_phone,
+    now()
+  )
+  ON CONFLICT (id) DO UPDATE
+  SET
+    email = COALESCE(NULLIF(public.profiles.email, ''), EXCLUDED.email),
+    phone = COALESCE(public.profiles.phone, EXCLUDED.phone),
+    updated_at = now();
+
+  -- 1. Inserir barbearia na tabela tenants
   INSERT INTO public.tenants (
     name,
     trade_name,
@@ -1150,23 +1229,24 @@ BEGIN
     settings
   ) VALUES (
     trim(p_name),
-    COALESCE(NULLIF(trim(p_trade_name), ''), trim(p_name)),
+    v_trade_name,
     v_clean_slug,
-    COALESCE(p_phone, '11999999999'),
+    v_phone,
     COALESCE(NULLIF(trim(p_email), ''), v_user_email, 'contato@mbarber.com.br'),
     v_street,
-    p_address_number,
-    p_address_neighborhood,
-    p_address_city,
-    p_address_state,
-    p_address_zip_code,
-    p_logo_url,
+    NULLIF(trim(p_address_number), ''),
+    NULLIF(trim(p_address_neighborhood), ''),
+    NULLIF(trim(p_address_city), ''),
+    NULLIF(trim(p_address_state), ''),
+    NULLIF(trim(p_address_zip_code), ''),
+    NULLIF(trim(p_logo_url), ''),
     'trial',
     now() + interval '14 days',
     '{"allow_client_cancel_hours": 2, "slot_interval_minutes": 30, "send_reminders_hours_before": 2}'::jsonb
   )
   RETURNING id INTO v_tenant_id;
 
+  -- 2. Vincular usuário logado como 'owner' na tabela tenant_users
   INSERT INTO public.tenant_users (
     tenant_id,
     user_id,
@@ -1181,6 +1261,7 @@ BEGIN
   ON CONFLICT (tenant_id, user_id) DO UPDATE
   SET role = 'owner', is_active = true;
 
+  -- 3. Inserir horários de funcionamento padrão (Segunda a Sábado 09:00 às 19:00)
   INSERT INTO public.business_hours (tenant_id, day_of_week, open_time, close_time, break_start, break_end, is_closed)
   VALUES
     (v_tenant_id, 0, '00:00', '00:00', NULL, NULL, true),
@@ -1192,12 +1273,14 @@ BEGIN
     (v_tenant_id, 6, '09:00', '18:00', '12:00', '13:00', false)
   ON CONFLICT (tenant_id, day_of_week) DO NOTHING;
 
+  -- 4. Inserir serviços básicos para ativação imediata
   INSERT INTO public.services (tenant_id, name, description, category, price_cents, duration_minutes, buffer_minutes, is_active)
   VALUES
     (v_tenant_id, 'Corte de Cabelo Tradicional', 'Corte completo com lavagem e acabamento.', 'Cabelo', 4000, 30, 5, true),
     (v_tenant_id, 'Barba Completa', 'Alinhamento na navalha e toalha quente.', 'Barba', 3500, 30, 5, true)
   ON CONFLICT DO NOTHING;
 
+  -- 5. Cadastrar o perfil do usuário como profissional inicial
   INSERT INTO public.professionals (tenant_id, user_id, name, phone, email, commission_rate, color_hex, is_active, display_order)
   SELECT
     v_tenant_id,
@@ -1215,4 +1298,243 @@ BEGIN
 
   RETURN v_tenant_id;
 END;
-$$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER;
+$$ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public, pg_temp;
+
+-- 4. Conceder permissão de execução explícita para usuários autenticados
+GRANT EXECUTE ON FUNCTION public.create_tenant_for_current_user(
+  TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT
+) TO authenticated;
+
+-- 5. RPC para o Chat Público: busca cliente por telefone dentro do tenant pelo slug
+CREATE OR REPLACE FUNCTION public.find_customer_by_phone(
+  p_slug TEXT,
+  p_phone TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_tenant_id UUID;
+  v_clean_phone TEXT;
+  v_customer RECORD;
+BEGIN
+  -- Obter o ID do tenant pelo slug
+  SELECT id INTO v_tenant_id FROM public.tenants WHERE slug = p_slug;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('found', false, 'error', 'Barbearia não encontrada.');
+  END IF;
+
+  v_clean_phone := regexp_replace(p_phone, '\D', '', 'g');
+  IF length(v_clean_phone) < 8 THEN
+    RETURN jsonb_build_object('found', false);
+  END IF;
+
+  -- Busca cliente correspondente pelo telefone limpo
+  SELECT id, name, phone, notes, total_appointments, total_spent_cents, last_appointment_at
+  INTO v_customer
+  FROM public.customers
+  WHERE tenant_id = v_tenant_id
+    AND (
+      phone = v_clean_phone 
+      OR regexp_replace(phone, '\D', '', 'g') = v_clean_phone
+      OR phone LIKE '%' || v_clean_phone
+    )
+  ORDER BY last_appointment_at DESC NULLS LAST, updated_at DESC
+  LIMIT 1;
+
+  IF FOUND THEN
+    RETURN jsonb_build_object(
+      'found', true,
+      'id', v_customer.id,
+      'name', v_customer.name,
+      'phone', v_customer.phone,
+      'notes', v_customer.notes,
+      'total_appointments', v_customer.total_appointments,
+      'total_spent_cents', v_customer.total_spent_cents,
+      'last_appointment_at', v_customer.last_appointment_at
+    );
+  END IF;
+
+  -- Se não achou na tabela customers, buscar nos agendamentos recentes
+  SELECT a.id, a.notes, a.created_at, c.name, c.phone
+  INTO v_customer
+  FROM public.appointments a
+  JOIN public.customers c ON c.id = a.customer_id
+  WHERE a.tenant_id = v_tenant_id
+    AND (
+      regexp_replace(c.phone, '\D', '', 'g') = v_clean_phone
+      OR c.phone LIKE '%' || v_clean_phone
+    )
+  ORDER BY a.start_time DESC
+  LIMIT 1;
+
+  IF FOUND THEN
+    RETURN jsonb_build_object(
+      'found', true,
+      'id', v_customer.id,
+      'name', v_customer.name,
+      'phone', v_customer.phone
+    );
+  END IF;
+
+  RETURN jsonb_build_object('found', false);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.find_customer_by_phone(TEXT, TEXT) TO anon, authenticated, service_role;
+
+-- 6. RPC para Barbearia: Exclusão completa e segura de cliente e seus históricos
+CREATE OR REPLACE FUNCTION public.delete_customer_by_id(
+  p_customer_id UUID,
+  p_tenant_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_deleted_count INTEGER := 0;
+BEGIN
+  IF NOT (public.is_platform_admin() OR public.has_tenant_permission(p_tenant_id, 'manage_settings') OR public.current_tenant_id() = p_tenant_id) THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.tenant_users 
+      WHERE tenant_id = p_tenant_id 
+        AND user_id = auth.uid() 
+        AND is_active = true
+    ) AND NOT public.is_platform_admin() THEN
+      RAISE EXCEPTION 'Não autorizado a excluir clientes nesta barbearia.';
+    END IF;
+  END IF;
+
+  DELETE FROM public.appointments 
+  WHERE customer_id = p_customer_id AND tenant_id = p_tenant_id;
+
+  DELETE FROM public.appointment_series 
+  WHERE customer_id = p_customer_id AND tenant_id = p_tenant_id;
+
+  DELETE FROM public.customers 
+  WHERE id = p_customer_id AND tenant_id = p_tenant_id;
+  
+  GET DIAGNOSTICS v_deleted_count = ROW_COUNT;
+
+  RETURN jsonb_build_object('success', true, 'deleted_count', v_deleted_count);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.delete_customer_by_id(UUID, UUID) TO authenticated, service_role;
+
+-- 7. RPC: Registro de Movimentação de Estoque
+CREATE OR REPLACE FUNCTION public.record_stock_movement(
+  p_tenant_id UUID,
+  p_product_id UUID,
+  p_type TEXT,
+  p_quantity INTEGER,
+  p_unit_cost_cents INTEGER DEFAULT NULL,
+  p_notes TEXT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_movement_id UUID;
+  v_current_stock INTEGER;
+  v_new_stock INTEGER;
+  v_type_enum public.stock_movement_type;
+BEGIN
+  IF auth.uid() IS NOT NULL AND NOT public.is_platform_admin() THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM public.tenant_users
+      WHERE tenant_id = p_tenant_id AND user_id = auth.uid() AND is_active = true
+    ) THEN
+      RAISE EXCEPTION 'Não autorizado a movimentar estoque nesta barbearia.';
+    END IF;
+  END IF;
+
+  SELECT current_stock INTO v_current_stock
+  FROM public.products
+  WHERE id = p_product_id AND tenant_id = p_tenant_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Produto não encontrado para esta barbearia.';
+  END IF;
+
+  BEGIN
+    v_type_enum := p_type::public.stock_movement_type;
+  EXCEPTION WHEN OTHERS THEN
+    v_type_enum := 'adjustment'::public.stock_movement_type;
+  END;
+
+  IF v_type_enum = 'in_purchase' THEN
+    v_new_stock := v_current_stock + p_quantity;
+  ELSIF v_type_enum IN ('out_sale', 'out_internal_use', 'out_loss_expired') THEN
+    v_new_stock := GREATEST(0, v_current_stock - p_quantity);
+  ELSIF v_type_enum = 'adjustment' THEN
+    v_new_stock := p_quantity;
+  ELSE
+    v_new_stock := v_current_stock;
+  END IF;
+
+  INSERT INTO public.stock_movements (
+    tenant_id,
+    product_id,
+    type,
+    quantity,
+    unit_cost_cents,
+    notes,
+    created_by,
+    created_at
+  ) VALUES (
+    p_tenant_id,
+    p_product_id,
+    v_type_enum,
+    p_quantity,
+    p_unit_cost_cents,
+    p_notes,
+    auth.uid(),
+    now()
+  )
+  RETURNING id INTO v_movement_id;
+
+  UPDATE public.products
+  SET
+    current_stock = v_new_stock,
+    updated_at = now()
+  WHERE id = p_product_id AND tenant_id = p_tenant_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'movement_id', v_movement_id,
+    'product_id', p_product_id,
+    'new_stock', v_new_stock
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.record_stock_movement(UUID, UUID, TEXT, INTEGER, INTEGER, TEXT) TO authenticated, service_role;
+
+-- 8. Permissões públicas para o Motor de Agendamento (Chat Público)
+GRANT EXECUTE ON FUNCTION public.get_available_slots(UUID, UUID, UUID, DATE) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.book_public_appointment(TEXT, UUID, UUID, DATE, TIME, TEXT, TEXT, TEXT) TO anon, authenticated;
+
+DROP POLICY IF EXISTS services_public_select ON public.services;
+CREATE POLICY services_public_select ON public.services
+  FOR SELECT TO anon, authenticated
+  USING (is_active = true);
+
+DROP POLICY IF EXISTS professionals_public_select ON public.professionals;
+CREATE POLICY professionals_public_select ON public.professionals
+  FOR SELECT TO anon, authenticated
+  USING (is_active = true);
+
+DROP POLICY IF EXISTS business_hours_public_select ON public.business_hours;
+CREATE POLICY business_hours_public_select ON public.business_hours
+  FOR SELECT TO anon, authenticated
+  USING (true);
+
+-- Notificar PostgREST para recarregar o cache
+NOTIFY pgrst, 'reload schema';

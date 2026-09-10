@@ -139,7 +139,7 @@ export const PublicChat: React.FC = () => {
 
       // 3. Carregar exclusivamente os profissionais reais do tenant
       const { data: dbPros, error: prosErr } = await (supabase.from("professionals") as any)
-        .select("id, name, nickname, color_hex, avatar_url, is_active, work_schedule")
+        .select("id, name, nickname, color_hex, avatar_url, is_active")
         .eq("tenant_id", dbTenant.id)
         .eq("is_active", true)
         .order("name");
@@ -353,10 +353,13 @@ export const PublicChat: React.FC = () => {
       // Bloqueios de horário reais cadastrados para este tenant
       let activeBlocks: any[] = [];
       try {
+        const startOfDay = `${selectedDate}T00:00:00`;
+        const endOfDay = `${selectedDate}T23:59:59`;
         const { data: dbBlocks, error: blocksErr } = await (supabase.from("schedule_blocks") as any)
-          .select("id, professional_id, start_date, start_time, end_time, is_all_day, title")
+          .select("id, professional_id, start_time, end_time, is_all_day, title")
           .eq("tenant_id", tenant.id)
-          .eq("start_date", selectedDate);
+          .gte("end_time", startOfDay)
+          .lte("start_time", endOfDay);
 
         if (blocksErr) {
           console.warn("Aviso ao buscar schedule_blocks:", blocksErr);
@@ -380,8 +383,8 @@ export const PublicChat: React.FC = () => {
         return;
       }
 
-      // Verifica horário próprio de trabalho e dia de folga do barbeiro
-      const sched = selectedProfessional.work_schedule;
+      // Verifica horário próprio de trabalho e dia de folga do barbeiro (se existir configuração personalizada)
+      const sched = (selectedProfessional as any).work_schedule;
       if (selectedProfessional.id !== "any" && sched) {
         if (sched.followBarbershopHours === false && Array.isArray(sched.workDays)) {
           const dayOfWeek = new Date(`${selectedDate}T12:00:00`).getDay();
@@ -393,8 +396,17 @@ export const PublicChat: React.FC = () => {
         }
       }
 
+      const getTimeFromTimestamp = (isoOrTime: string | null | undefined, fallback: string): string => {
+        if (!isoOrTime) return fallback;
+        if (isoOrTime.includes("T")) {
+          const timePart = isoOrTime.split("T")[1];
+          return timePart ? timePart.slice(0, 5) : fallback;
+        }
+        return isoOrTime.slice(0, 5);
+      };
+
       const isSlotAllowed = (timeStr: string) => {
-        // 1. Checa intervalo de almoço do barbeiro
+        // 1. Checa intervalo de almoço do barbeiro se configurado
         if (selectedProfessional.id !== "any" && sched && sched.hasLunchBreak !== false) {
           const lStart = sched.lunchStart || "12:00";
           const lEnd = sched.lunchEnd || "13:00";
@@ -409,8 +421,8 @@ export const PublicChat: React.FC = () => {
             !b.professional_id || selectedProfessional.id === "any" || b.professional_id === selectedProfessional.id;
           if (!matchesBarber) return false;
           if (b.is_all_day) return true;
-          const bStart = b.start_time ? b.start_time.slice(0, 5) : "00:00";
-          const bEnd = b.end_time ? b.end_time.slice(0, 5) : "23:59";
+          const bStart = getTimeFromTimestamp(b.start_time, "00:00");
+          const bEnd = getTimeFromTimestamp(b.end_time, "23:59");
           return timeStr >= bStart && timeStr < bEnd;
         });
         if (isBlocked) return false;
