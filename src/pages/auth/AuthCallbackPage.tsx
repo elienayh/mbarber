@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase";
 
 export const AuthCallbackPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile, memberships, tenant, loading, getRedirectPath } = useAuth();
+  const { user, profile, memberships, tenant, loading, getRedirectPath, refreshUserData } = useAuth();
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -34,11 +34,19 @@ export const AuthCallbackPage: React.FC = () => {
           return;
         }
 
+        if (session?.user) {
+          // Sessão estabelecida no Supabase! Atualizar AuthContext para que user seja populado
+          await refreshUserData();
+          return;
+        }
+
         if (!session) {
           // Dar uma janela de tolerância para o Supabase processar o hash de fragmento (#access_token)
           timeoutId = setTimeout(async () => {
             const { data: { session: retrySession } } = await supabase.auth.getSession();
-            if (!retrySession) {
+            if (retrySession?.user) {
+              await refreshUserData();
+            } else {
               setErrorMsg("Não foi possível confirmar a sessão de login. Tente novamente.");
             }
           }, 3000);
@@ -53,7 +61,7 @@ export const AuthCallbackPage: React.FC = () => {
     return () => {
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [user, profile, memberships, tenant, loading, navigate, getRedirectPath]);
+  }, [user, profile, memberships, tenant, loading, navigate, getRedirectPath, refreshUserData]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">

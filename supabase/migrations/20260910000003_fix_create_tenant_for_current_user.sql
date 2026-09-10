@@ -43,6 +43,7 @@ RETURNS UUID AS $$
 DECLARE
   v_user_id UUID;
   v_user_email VARCHAR(150);
+  v_user_full_name TEXT;
   v_slug_check JSONB;
   v_tenant_id UUID;
   v_clean_slug TEXT;
@@ -56,8 +57,13 @@ BEGIN
     RAISE EXCEPTION 'Usuário não autenticado. Faça login para cadastrar sua barbearia.';
   END IF;
 
-  -- Obter e-mail cadastrado do usuário autenticado
-  SELECT email INTO v_user_email FROM auth.users WHERE id = v_user_id;
+  -- Obter e-mail e metadados cadastrados do usuário autenticado
+  SELECT 
+    email,
+    COALESCE(raw_user_meta_data->>'full_name', raw_user_meta_data->>'name', '')
+  INTO v_user_email, v_user_full_name 
+  FROM auth.users 
+  WHERE id = v_user_id;
 
   -- Higienizar e validar o slug
   v_clean_slug := lower(trim(p_slug));
@@ -74,6 +80,26 @@ BEGIN
   v_street := COALESCE(NULLIF(trim(p_address_street), ''), NULLIF(trim(p_address), ''));
   v_trade_name := COALESCE(NULLIF(trim(p_trade_name), ''), trim(p_name));
   v_phone := COALESCE(NULLIF(trim(p_phone), ''), '11999999999');
+
+  -- Assegurar existência do registro em public.profiles para satisfazer a foreign key tenant_users_user_id_fkey
+  INSERT INTO public.profiles (
+    id,
+    email,
+    full_name,
+    phone,
+    updated_at
+  ) VALUES (
+    v_user_id,
+    COALESCE(v_user_email, ''),
+    COALESCE(NULLIF(v_user_full_name, ''), trim(p_name), 'Barbeiro Principal'),
+    v_phone,
+    now()
+  )
+  ON CONFLICT (id) DO UPDATE
+  SET
+    email = COALESCE(NULLIF(public.profiles.email, ''), EXCLUDED.email),
+    phone = COALESCE(public.profiles.phone, EXCLUDED.phone),
+    updated_at = now();
 
   -- 1. Inserir barbearia na tabela tenants
   INSERT INTO public.tenants (

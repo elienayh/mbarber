@@ -27,7 +27,10 @@ const BRAZILIAN_STATES = [
 export const TenantOnboardingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, profile, tenant, refreshUserData } = useAuth();
+  const { user, profile, tenant, loading, refreshUserData } = useAuth();
+
+  const [sessionChecking, setSessionChecking] = useState<boolean>(true);
+  const [currentAuthUser, setCurrentAuthUser] = useState(user);
 
   const [name, setName] = useState(tenant?.name || "");
   const [slug, setSlug] = useState(tenant?.slug || "");
@@ -41,6 +44,55 @@ export const TenantOnboardingPage: React.FC = () => {
   const [state, setState] = useState(tenant?.address_state || "SP");
   const [zipCode, setZipCode] = useState(tenant?.address_zip_code || "");
   const [cepLoading, setCepLoading] = useState(false);
+
+  // Monitorar e validar sessão ativa do Supabase Auth para prevenir condições de corrida
+  useEffect(() => {
+    let active = true;
+
+    const verifyCurrentSession = async () => {
+      if (user) {
+        if (active) {
+          setCurrentAuthUser(user);
+          setSessionChecking(false);
+        }
+        return;
+      }
+
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          if (active) {
+            setCurrentAuthUser(authUser);
+            setSessionChecking(false);
+          }
+          await refreshUserData();
+        } else if (!loading) {
+          if (active) setSessionChecking(false);
+        }
+      } catch (err) {
+        console.warn("Aviso ao validar sessão inicial do onboarding:", err);
+        if (active) setSessionChecking(false);
+      }
+    };
+
+    verifyCurrentSession();
+
+    return () => {
+      active = false;
+    };
+  }, [user, loading, refreshUserData]);
+
+  // Sincronizar dados caso usuário/sessão seja restaurada após o mount
+  useEffect(() => {
+    const effectiveEmail = currentAuthUser?.email || user?.email;
+    if (effectiveEmail && !email) {
+      setEmail(effectiveEmail);
+    }
+    const effectivePhone = profile?.phone || currentAuthUser?.user_metadata?.phone;
+    if (effectivePhone && !phone) {
+      setPhone(effectivePhone);
+    }
+  }, [currentAuthUser, user, profile]);
 
   const [slugStatus, setSlugStatus] = useState<{
     checking: boolean;
@@ -229,7 +281,50 @@ export const TenantOnboardingPage: React.FC = () => {
     setSubmitting(true);
 
     try {
-      if (!user) throw new Error("Sessão expirada. Faça login novamente.");
+      // 1. Verificação obrigatória: garantir sessão válida do Supabase e obter o usuário com supabase.auth.getUser()
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      let authenticatedUser = authData?.user;
+
+      if (authError || !authenticatedUser) {
+        // Tentar verificar sessão ativa se o token estiver sendo atualizado
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          authenticatedUser = session.user;
+        } else if (user) {
+          authenticatedUser = user;
+        } else {
+          throw new Error("Sessão de autenticação não encontrada ou expirada. Faça login novamente.");
+        }
+      }
+
+      if (!authenticatedUser?.id) {
+        throw new Error("Não foi possível identificar o usuário autenticado. Faça login novamente.");
+      }
+
+      // 2. Garantir que o perfil do usuário exista em public.profiles para satisfazer a foreign key tenant_users_user_id_fkey
+      try {
+        await (supabase.from("profiles") as any).upsert(
+          {
+            id: authenticatedUser.id,
+            email: authenticatedUser.email || email.trim() || "",
+            full_name:
+              authenticatedUser.user_metadata?.full_name ||
+              authenticatedUser.user_metadata?.name ||
+              profile?.full_name ||
+              cleanName,
+            phone: phone.trim() || profile?.phone || authenticatedUser.user_metadata?.phone || null,
+            avatar_url:
+              authenticatedUser.user_metadata?.avatar_url ||
+              authenticatedUser.user_metadata?.picture ||
+              profile?.avatar_url ||
+              null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "id" }
+        );
+      } catch (profileSyncErr) {
+        console.warn("Aviso ao sincronizar perfil pré-onboarding:", profileSyncErr);
+      }
 
       // Se o tenant já existir (ex: atualização), atualiza diretamente
       if (tenant?.id) {
@@ -296,6 +391,18 @@ export const TenantOnboardingPage: React.FC = () => {
       navigate("/dashboard", { replace: true });
     }
   };
+
+  // Se a sessão estiver sendo restaurada ou carregando, aguardar para evitar condição de corrida
+  if (loading || (sessionChecking && !user)) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-accent animate-spin" />
+          <p className="text-xs text-slate-400">Verificando sessão de autenticação...</p>
+        </div>
+      </div>
+    );
+  }
 
   // TELA DE SUCESSO APÓS SALVAR
   if (createdSlug) {

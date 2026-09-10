@@ -384,7 +384,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      if (session?.user && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED")) {
+      if (
+        session?.user &&
+        (event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "INITIAL_SESSION" ||
+          event === "USER_UPDATED")
+      ) {
         const { profile, memberships, tenantMembership, tenant, tenantRole, error: fetchError } =
           await fetchUserData(session.user.id);
         setState({
