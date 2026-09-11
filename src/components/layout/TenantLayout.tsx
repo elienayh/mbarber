@@ -76,9 +76,11 @@ export const TenantLayout: React.FC = () => {
                 className="w-9 h-9 rounded-lg object-cover border border-accent/40 shadow-md shrink-0"
               />
             ) : (
-              <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center font-bold text-slate-950 text-xl shadow-lg shadow-accent shrink-0">
-                MB
-              </div>
+              <img
+                src="/favicon-32x32.png"
+                alt="MetricBarber"
+                className="w-9 h-9 rounded-lg object-contain shadow-lg shrink-0"
+              />
             )}
             <div className="min-w-0">
               <div className="font-bold text-base leading-tight tracking-tight text-white truncate">
@@ -218,9 +220,11 @@ export const TenantLayout: React.FC = () => {
                       className="w-8 h-8 rounded-lg object-cover border border-accent/40 shrink-0"
                     />
                   ) : (
-                    <div className="w-8 h-8 rounded-lg bg-accent text-slate-950 font-bold flex items-center justify-center text-sm shrink-0">
-                      MB
-                    </div>
+                    <img
+                      src="/favicon-32x32.png"
+                      alt="MetricBarber"
+                      className="w-8 h-8 rounded-lg object-contain shrink-0"
+                    />
                   )}
                   <div className="font-bold text-sm text-white truncate">
                     {tenant?.trade_name || tenant?.name || "MetricBarber"}

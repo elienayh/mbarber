@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Fundo Laranja com Cantos Arredondados (Squircle) -->
+  <rect width="512" height="512" rx="110" ry="110" fill="#F86D00" />
+
+  <g id="metricbarber-emblem">
+    <!-- Haste Direita e Topo do 'M' (Salmão / Pêssego Claro #FAB487) -->
+    <!-- Coluna vertical direita e corte diagonal superior -->
+    <polygon points="446,152 446,386 382,386 382,204 320,292 175,152" fill="#FAB487" />
+
+    <!-- Lâmina da Navalha (Corpo intermediário em Salmão) -->
+    <polygon points="175,152 320,292 320,366 175,236" fill="#FAB487" />
+
+    <!-- Fio da Lâmina / Navalha (Branco Puro #FFFFFF com corte em bisel) -->
+    <path d="M 175,236 L 319,366 C 321,373 315,385 304,385 L 295,385 C 280,385 175,282 175,236 Z" fill="#FFFFFF" />
+
+    <!-- Cabo da Navalhete (Estrutura Principal em Salmão #FAB487) -->
+    <path d="M 132,126 C 154,126 168,142 163,164 L 123,354 C 119,374 100,386 82,382 C 66,378 57,361 61,343 L 103,148 C 107,134 118,126 132,126 Z" fill="#FAB487" />
+
+    <!-- Detalhe interno de contorno do cabo (Sombra/relevo elegante) -->
+    <path d="M 152,170 L 118,345 C 115,358 106,366 94,367 C 106,370 119,363 123,348 L 157,178 C 158,172 156,168 152,170 Z" fill="#E68243" />
+
+    <!-- Pinos / Rebites do cabo mostrando o fundo laranja -->
+    <!-- Pino superior do pivô -->
+    <circle cx="132" cy="154" r="14.5" fill="#F86D00" />
+    <!-- Pino inferior do cabo -->
+    <circle cx="92" cy="354" r="11.5" fill="#F86D00" />
+  </g>
+</svg>

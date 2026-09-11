@@ -23,8 +23,8 @@ self.addEventListener('push', (event) => {
   const title = data.title || '✂️ Novo Agendamento Recebido!';
   const options = {
     body: data.body || data.message || 'Um novo agendamento foi recebido no MetricBarber.',
-    icon: data.icon || '/barber-hero.jpg',
-    badge: data.badge || '/barber-hero.jpg',
+    icon: data.icon || '/icon-192.png',
+    badge: data.badge || '/favicon-32x32.png',
     vibrate: [200, 100, 200],
     data: {
       url: data.url || '/agenda',

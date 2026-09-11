@@ -43,7 +43,7 @@ Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return response({ error: 'Method not allowed' }, 405);
 
-  const signingSecret = Deno.env.get('STRIPE_WEBHOOK_SIGNING_SECRET');
+  const signingSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   if (!signingSecret || !serviceRoleKey || !supabaseUrl) return response({ error: 'Webhook secrets are not configured.' }, 500);
