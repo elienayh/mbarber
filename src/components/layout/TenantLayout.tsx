@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   Sparkles,
+  CreditCard,
 } from "lucide-react";
 
 export const TenantLayout: React.FC = () => {
@@ -41,6 +42,7 @@ export const TenantLayout: React.FC = () => {
     { label: "Financeiro", href: "/financeiro", icon: DollarSign },
     { label: "Estoque", href: "/estoque", icon: Package },
     { label: "Relatórios", href: "/relatorios", icon: BarChart3 },
+    { label: "Assinatura", href: "/assinatura", icon: CreditCard },
     { label: "Configurações", href: "/configuracoes", icon: Settings },
   ];
   const visibleNavItems = tenantRole === "professional"
@@ -113,19 +115,16 @@ export const TenantLayout: React.FC = () => {
         )}
 
         {tenant?.status === "trial" && (
-          <div className="mx-3 my-3 p-3 rounded-lg surface-accent-soft border border-accent text-xs">
-            <div className="flex items-center gap-1.5 font-semibold text-accent">
-              <Sparkles className="w-4 h-4" />
-              Período de Testes
+          <Link
+            to="/assinatura"
+            className="mx-3 my-2.5 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between text-xs hover:bg-amber-500/20 transition group"
+          >
+            <div className="flex items-center gap-2 text-amber-400 font-semibold min-w-0">
+              <Sparkles className="w-3.5 h-3.5 shrink-0 text-accent" />
+              <span className="truncate">{trialDaysLeft > 0 ? `${trialDaysLeft}d de teste restante` : "Teste expirado"}</span>
             </div>
-            <p className="text-slate-300 mt-1">Restam {trialDaysLeft} dias de Trial gratuito.</p>
-            <Link
-              to="/configuracoes/assinatura"
-              className="mt-2 block w-full text-center py-1 rounded bg-accent hover-bg-accent text-slate-950 font-bold transition"
-            >
-              Assinar Plano
-            </Link>
-          </div>
+            <span className="text-[10px] text-accent font-bold group-hover:underline shrink-0">Plano →</span>
+          </Link>
         )}
 
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">

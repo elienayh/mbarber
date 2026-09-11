@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { Link } from "react-router-dom";
 import {
   Settings,
   Globe,
@@ -86,9 +87,7 @@ export const SettingsPage: React.FC = () => {
   const [isDraggingLogo, setIsDraggingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Stripe State
-  const [stripeLoading, setStripeLoading] = useState(false);
-  const [stripeError, setStripeError] = useState<string | null>(null);
+  // Subscription State
   const [subscription, setSubscription] = useState<any>(null);
   const [defaultPlan, setDefaultPlan] = useState<any>(null);
 
@@ -650,37 +649,6 @@ export const SettingsPage: React.FC = () => {
     } finally {
       setSaveLoading(false);
     }
-  };
-
-  // Stripe Portal Handlers
-  const openStripeCheckout = async () => {
-    if (!tenant?.id) return;
-    setStripeLoading(true);
-    setStripeError(null);
-    const { data, error } = await supabase.functions.invoke("stripe-create-checkout-session", {
-      body: { tenant_id: tenant.id, plan_slug: "pro", origin: window.location.origin },
-    });
-    setStripeLoading(false);
-    if (error || !data?.url) {
-      setStripeError(error?.message || "Não foi possível abrir o checkout Stripe.");
-      return;
-    }
-    window.location.assign(data.url);
-  };
-
-  const openStripePortal = async () => {
-    if (!tenant?.id) return;
-    setStripeLoading(true);
-    setStripeError(null);
-    const { data, error } = await supabase.functions.invoke("stripe-create-portal-session", {
-      body: { tenant_id: tenant.id, origin: window.location.origin },
-    });
-    setStripeLoading(false);
-    if (error || !data?.url) {
-      setStripeError(error?.message || "Nenhuma assinatura Stripe ativa foi encontrada.");
-      return;
-    }
-    window.location.assign(data.url);
   };
 
   // Address query for map geocoding
@@ -1329,18 +1297,18 @@ export const SettingsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* SEÇÃO 5: ASSINATURA STRIPE */}
+      {/* SEÇÃO 5: ASSINATURA */}
       <div className="surface-card-light p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-3">
           <div className="flex items-center gap-2">
             <CreditCard className="w-5 h-5 text-accent" />
             <div>
-              <h3 className="font-bold text-slate-900 text-base">Assinatura do MetricBarber (Stripe)</h3>
-              <p className="text-xs text-slate-500">Gerenciamento de faturas, cartões e planos</p>
+              <h3 className="font-bold text-slate-900 text-base">Assinatura</h3>
+              <p className="text-xs text-slate-500">Plano, faturas e contratação de barbeiros</p>
             </div>
           </div>
           <span
-            className={`px-3 py-1 rounded-full text-xs font-bold ${
+            className={`self-start sm:self-auto px-3 py-1 rounded-full text-xs font-bold ${
               subscription?.status === "active"
                 ? "bg-emerald-100 text-emerald-800"
                 : "surface-accent-soft text-primary-on-light"
@@ -1353,44 +1321,25 @@ export const SettingsPage: React.FC = () => {
         <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="font-bold text-slate-900 text-sm">
-              {subscription?.plans?.name || defaultPlan?.name || "Plano Profissional MetricBarber"}
+              {subscription?.plans?.name || defaultPlan?.name || "Plano Barbearia Pro"}
             </div>
-            <div className="text-xs text-slate-500 mt-0.5">Assinatura gerenciada com segurança pelo Stripe</div>
-            <div className="text-base font-black text-slate-900 mt-2">
-              {formatCurrency(subscription?.plans?.price_cents || defaultPlan?.price_cents || 9700)} /{" "}
-              {(subscription?.plans?.billing_cycle || defaultPlan?.billing_cycle) === "yearly"
-                ? "ano"
-                : (subscription?.plans?.billing_cycle || defaultPlan?.billing_cycle) === "quarterly"
-                ? "trimestre"
-                : "mês"}
+            <div className="text-xs text-slate-500 mt-0.5">
+              Gerencie seus dados de faturamento, adicione barbeiros ou mude de plano diretamente no menu dedicado.
             </div>
             {subscription?.current_period_end && (
-              <div className="text-xs text-slate-500 mt-1">
+              <div className="text-xs text-slate-600 font-medium mt-2">
                 Próxima renovação: {new Date(subscription.current_period_end).toLocaleDateString("pt-BR")}
               </div>
             )}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={openStripeCheckout}
-              disabled={stripeLoading}
-              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition shadow-md shadow-emerald-600/20 flex items-center gap-2 disabled:opacity-50"
-            >
-              <CreditCard className="w-4 h-4" />
-              <span>{stripeLoading ? "Abrindo Stripe..." : "Assinar via Stripe"}</span>
-            </button>
-            <button
-              type="button"
-              onClick={openStripePortal}
-              disabled={stripeLoading}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-sm hover:bg-slate-100 transition disabled:opacity-50"
-            >
-              Faturas e assinatura
-            </button>
-          </div>
+          <Link
+            to="/assinatura"
+            className="px-5 py-2.5 rounded-xl bg-accent hover-bg-accent text-slate-950 font-bold text-sm transition shadow-sm flex items-center justify-center gap-2 shrink-0"
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>Gerenciar Assinatura</span>
+          </Link>
         </div>
-        {stripeError && <p className="text-xs text-red-600">{stripeError}</p>}
       </div>
     </div>
   );

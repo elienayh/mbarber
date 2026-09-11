@@ -21,15 +21,16 @@ Deno.serve(async (request) => {
 
   try {
     const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) return response({ error: 'Authentication required' }, 401);
+    if (!token) return response({ error: 'Autenticação necessária. Por favor, faça login.' }, 401);
 
-    const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
-    const { data: userData, error: userError } = await userClient.auth.getUser(token);
-    if (userError || !userData.user) return response({ error: 'Authentication required' }, 401);
+    const { data: userData, error: userError } = await adminClient.auth.getUser(token);
+    if (userError || !userData.user) return response({ error: 'Usuário não autenticado ou sessão expirada.' }, 401);
 
     const payload = await request.json();
     const tenantId = payload.tenant_id;
+    if (!tenantId) return response({ error: 'tenant_id é obrigatório.' }, 400);
+
     const { data: profile } = await adminClient.from('profiles').select('is_platform_admin').eq('id', userData.user.id).maybeSingle();
     const { data: membership } = await adminClient
       .from('tenant_users')
@@ -38,8 +39,26 @@ Deno.serve(async (request) => {
       .eq('user_id', userData.user.id)
       .eq('is_active', true)
       .maybeSingle();
-    if (!profile?.is_platform_admin && !['owner', 'admin'].includes(membership?.role)) {
-      return response({ error: 'You are not allowed to manage this subscription.' }, 403);
+
+    const isAllowed = profile?.is_platform_admin || ['owner', 'admin'].includes(membership?.role);
+    if (!isAllowed) {
+      const { data: pro } = await adminClient
+        .from('professionals')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('user_id', userData.user.id)
+        .maybeSingle();
+
+      if (pro) {
+        await adminClient.from('tenant_users').upsert({
+          tenant_id: tenantId,
+          user_id: userData.user.id,
+          role: 'owner',
+          is_active: true,
+        }, { onConflict: 'tenant_id,user_id' });
+      } else {
+        return response({ error: 'Você não tem permissão para gerenciar a assinatura desta barbearia.' }, 403);
+      }
     }
 
     const { data: subscription } = await adminClient
@@ -47,12 +66,14 @@ Deno.serve(async (request) => {
       .select('stripe_customer_id')
       .eq('tenant_id', tenantId)
       .maybeSingle();
-    if (!subscription?.stripe_customer_id) return response({ error: 'No Stripe customer is linked to this tenant.' }, 404);
+    if (!subscription?.stripe_customer_id) {
+      return response({ error: 'Nenhum cadastro de faturamento ativo foi encontrado para esta barbearia. Assine um plano primeiro.' }, 404);
+    }
 
     const origin = payload.origin || request.headers.get('Origin') || 'https://mbarber.com.br';
     const params = new URLSearchParams({
       customer: subscription.stripe_customer_id,
-      return_url: `${origin}/configuracoes/assinatura`,
+      return_url: `${origin}/assinatura`,
     });
     const stripeResponse = await fetch('https://api.stripe.com/v1/billing_portal/sessions', {
       method: 'POST',
@@ -63,11 +84,11 @@ Deno.serve(async (request) => {
       body: params,
     });
     const data = await stripeResponse.json();
-    if (!stripeResponse.ok) throw new Error(data?.error?.message || 'Unable to create portal session.');
+    if (!stripeResponse.ok) throw new Error(data?.error?.message || 'Não foi possível abrir o portal de faturamento.');
 
     return response({ url: data.url });
   } catch (error) {
     console.error('[stripe-create-portal-session]', error);
-    return response({ error: error instanceof Error ? error.message : 'Unable to create portal session.' }, 400);
+    return response({ error: error instanceof Error ? error.message : 'Não foi possível abrir o painel de faturamento.' }, 400);
   }
 });

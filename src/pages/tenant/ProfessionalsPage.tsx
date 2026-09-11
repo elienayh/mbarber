@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from "react";
+import { Link } from "react-router-dom";
 import {
   UserCheck,
   Plus,
@@ -579,13 +580,21 @@ export const ProfessionalsPage: React.FC = () => {
             Comissões individuais por serviço, fotos no agendamento, permissões de acesso e link de senha.
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="px-4 py-2.5 rounded-xl bg-accent hover:bg-accent/90 text-slate-950 font-bold text-sm transition shadow-md shadow-accent/20 flex items-center justify-center gap-2 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Cadastrar Profissional</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <Link
+            to="/assinatura"
+            className="px-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 transition"
+          >
+            Vagas & Plano
+          </Link>
+          <button
+            onClick={openCreate}
+            className="px-4 py-2.5 rounded-xl bg-accent hover-bg-accent text-slate-950 font-bold text-sm transition shadow-md shadow-accent/20 flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Cadastrar Profissional</span>
+          </button>
+        </div>
       </div>
 
       {successToast && (

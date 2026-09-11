@@ -19,6 +19,7 @@ import { FinancialPage } from "./pages/tenant/FinancialPage";
 import { StockPage } from "./pages/tenant/StockPage";
 import { ReportsPage } from "./pages/tenant/ReportsPage";
 import { SettingsPage } from "./pages/tenant/SettingsPage";
+import { SubscriptionPage } from "./pages/tenant/SubscriptionPage";
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
 import { TenantsListPage } from "./pages/admin/TenantsListPage";
 import { PlansPage } from "./pages/admin/PlansPage";
@@ -85,8 +86,9 @@ function App() {
           <Route path="/financeiro" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><FinancialPage /></ProtectedRoute>} />
           <Route path="/estoque" element={<ProtectedRoute allowedRoles={["owner", "admin", "receptionist"]}><StockPage /></ProtectedRoute>} />
           <Route path="/relatorios" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><ReportsPage /></ProtectedRoute>} />
+          <Route path="/assinatura" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><SubscriptionPage /></ProtectedRoute>} />
           <Route path="/configuracoes" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><SettingsPage /></ProtectedRoute>} />
-          <Route path="/configuracoes/assinatura" element={<ProtectedRoute allowedRoles={["owner"]}><SettingsPage /></ProtectedRoute>} />
+          <Route path="/configuracoes/assinatura" element={<Navigate to="/assinatura" replace />} />
         </Route>
 
         {/* Painel Administrativo SaaS (Super Admin) — requer autenticação + is_platform_admin */}

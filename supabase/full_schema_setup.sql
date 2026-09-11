@@ -858,9 +858,9 @@ CREATE TRIGGER trg_appointment_completed AFTER UPDATE OF status ON public.appoin
 -- 1. SEED PLANS
 INSERT INTO public.plans (id, name, slug, description, stripe_product_id, stripe_price_id, price_cents, billing_cycle, max_professionals, features, is_active)
 VALUES
-  ('11111111-1111-1111-1111-111111111111', 'Plano Solo', 'solo', 'Ideal para barbeiros autônomos.', 'prod_solo', 'price_solo_monthly', 3900, 'monthly', 1, '{"reports": true, "inventory": false, "whatsapp_alerts": true}'::jsonb, true),
-  ('22222222-2222-2222-2222-222222222222', 'Plano Barbearia Pro', 'pro', 'Para barbearias de 2 a 5 cadeiras.', 'prod_pro', 'price_pro_monthly', 7900, 'monthly', 5, '{"reports": true, "inventory": true, "whatsapp_alerts": true, "recurrence": true}'::jsonb, true),
-  ('33333333-3333-3333-3333-333333333333', 'Plano Rede / Enterprise', 'enterprise', 'Para grandes barbearias e redes.', 'prod_enterprise', 'price_enterprise_monthly', 14900, 'monthly', 15, '{"reports": true, "inventory": true, "whatsapp_alerts": true, "recurrence": true, "multi_unit": true}'::jsonb, true)
+  ('11111111-1111-1111-1111-111111111111', 'Plano 1 Barbeiro', 'solo', '1 profissional • R$ 29,90/mês', 'prod_solo', 'price_solo_monthly', 2990, 'monthly', 1, '{"reports": true, "inventory": true, "whatsapp_alerts": true}'::jsonb, true),
+  ('22222222-2222-2222-2222-222222222222', 'Plano 2 Barbeiros', 'pro', '2 profissionais • R$ 29,90 por barbeiro (R$ 59,80/mês)', 'prod_pro', 'price_pro_monthly', 5980, 'monthly', 2, '{"reports": true, "inventory": true, "whatsapp_alerts": true, "recurrence": true}'::jsonb, true),
+  ('33333333-3333-3333-3333-333333333333', 'Plano 3 Barbeiros', 'enterprise', '3 profissionais • R$ 29,90 por barbeiro (R$ 89,70/mês)', 'prod_enterprise', 'price_enterprise_monthly', 8970, 'monthly', 3, '{"reports": true, "inventory": true, "whatsapp_alerts": true, "recurrence": true, "multi_unit": true}'::jsonb, true)
 ON CONFLICT (slug) DO NOTHING;
 
 -- 2. SEED DEMO TENANT
@@ -1241,7 +1241,7 @@ BEGIN
     NULLIF(trim(p_address_zip_code), ''),
     NULLIF(trim(p_logo_url), ''),
     'trial',
-    now() + interval '14 days',
+    now() + interval '35 days',
     '{"allow_client_cancel_hours": 2, "slot_interval_minutes": 30, "send_reminders_hours_before": 2}'::jsonb
   )
   RETURNING id INTO v_tenant_id;

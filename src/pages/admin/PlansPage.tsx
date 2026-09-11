@@ -29,9 +29,9 @@ export const PlansPage: React.FC = () => {
     <div className="space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-950 p-6 rounded-2xl border border-slate-800 shadow-sm">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-white">Planos do MetricBarber (Stripe)</h2>
+          <h2 className="text-xl sm:text-2xl font-black text-white">Planos do MetricBarber</h2>
           <p className="text-sm text-slate-400 mt-0.5">
-            Preços, limites de profissionais e sincronização com Stripe Products
+            Preços, limites de profissionais e capacidade da barbearia (R$ 29,90 por profissional/mês)
           </p>
         </div>
       </div>

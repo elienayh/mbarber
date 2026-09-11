@@ -132,7 +132,7 @@ BEGIN
     NULLIF(trim(p_address_zip_code), ''),
     NULLIF(trim(p_logo_url), ''),
     'trial',
-    now() + interval '14 days',
+    now() + interval '35 days',
     '{"allow_client_cancel_hours": 2, "slot_interval_minutes": 30, "send_reminders_hours_before": 2}'::jsonb
   )
   RETURNING id INTO v_tenant_id;
