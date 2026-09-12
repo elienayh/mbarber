@@ -656,16 +656,6 @@ export const SubscriptionPage: React.FC = () => {
               />
             </div>
           </div>
-
-          <div className="text-slate-500 text-[11px]">
-            {activeProfessionalsCount >= maxAllowedProfessionals ? (
-              <span className="text-amber-700 font-semibold">
-                Você atingiu o limite de barbeiros do plano. Adicione outro barbeiro para contratar mais profissionais.
-              </span>
-            ) : (
-              <span>Você pode cadastrar mais {maxAllowedProfessionals - activeProfessionalsCount} profissional(is).</span>
-            )}
-          </div>
         </div>
 
         {/* Barra de Ações Rápidas */}

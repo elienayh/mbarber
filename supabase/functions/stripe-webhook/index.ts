@@ -38,7 +38,31 @@ const stripeGet = async (path: string) => {
   return data;
 };
 
-const isoFromUnix = (value: number | null | undefined) => value ? new Date(value * 1000).toISOString() : new Date().toISOString();
+const isoFromUnix = (value: number | null | undefined) => value ? new Date(value * 1000).toISOString() : null;
+
+const extractSubscriptionPeriod = (sub: any) => {
+  // 1. Na versão 2026-08-26+ do Stripe, as datas de início e fim do ciclo estão em items.data[0]
+  const firstItem = sub?.items?.data?.[0];
+  const itemStart = firstItem?.current_period_start;
+  const itemEnd = firstItem?.current_period_end;
+
+  // 2. Fallback para o nível raiz da assinatura (versões anteriores da API do Stripe)
+  const rootStart = sub?.current_period_start;
+  const rootEnd = sub?.current_period_end;
+
+  const startUnix = Number(itemStart || rootStart || sub?.created || Math.floor(Date.now() / 1000));
+  let endUnix = Number(itemEnd || rootEnd);
+
+  // Se o fim não estiver definido ou for menor/igual ao início, define 30 dias (1 ciclo mensal padrão)
+  if (!endUnix || endUnix <= startUnix) {
+    endUnix = startUnix + (30 * 24 * 60 * 60);
+  }
+
+  return {
+    periodStartIso: new Date(startUnix * 1000).toISOString(),
+    periodEndIso: new Date(endUnix * 1000).toISOString(),
+  };
+};
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -132,14 +156,16 @@ Deno.serve(async (request) => {
     if (['checkout.session.completed', 'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(event.type) && tenantId && subscriptionId) {
       const canceled = event.type === 'customer.subscription.deleted';
       const status = canceled ? 'canceled' : subscription.status;
+      const { periodStartIso, periodEndIso } = extractSubscriptionPeriod(subscription);
+
       const { error: subscriptionError } = await adminClient.from('subscriptions').upsert({
         tenant_id: tenantId,
         plan_id: planId,
         stripe_customer_id: customerId,
         stripe_subscription_id: subscription.id || subscriptionId,
         status,
-        current_period_start: isoFromUnix(subscription.current_period_start),
-        current_period_end: isoFromUnix(subscription.current_period_end),
+        current_period_start: periodStartIso,
+        current_period_end: periodEndIso,
         cancel_at_period_end: Boolean(subscription.cancel_at_period_end),
         canceled_at: subscription.canceled_at ? isoFromUnix(subscription.canceled_at) : null,
         updated_at: new Date().toISOString(),
@@ -150,7 +176,22 @@ Deno.serve(async (request) => {
     }
 
     if (event.type === 'invoice.payment_succeeded' && customerId) {
-      await adminClient.from('subscriptions').update({ status: 'active', updated_at: new Date().toISOString() }).eq('stripe_customer_id', customerId);
+      const invoice = event.data?.object || {};
+      const invoiceLine = invoice.lines?.data?.[0];
+      const invStart = invoiceLine?.period?.start;
+      const invEnd = invoiceLine?.period?.end;
+
+      const updatePayload: Record<string, any> = {
+        status: 'active',
+        updated_at: new Date().toISOString(),
+      };
+
+      if (invStart && invEnd && invEnd > invStart) {
+        updatePayload.current_period_start = new Date(invStart * 1000).toISOString();
+        updatePayload.current_period_end = new Date(invEnd * 1000).toISOString();
+      }
+
+      await adminClient.from('subscriptions').update(updatePayload).eq('stripe_customer_id', customerId);
       if (tenantId) {
         await adminClient.from('tenants').update({ status: 'active' }).eq('id', tenantId);
       }
