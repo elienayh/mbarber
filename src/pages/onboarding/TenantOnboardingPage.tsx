@@ -452,7 +452,7 @@ export const TenantOnboardingPage: React.FC = () => {
         localStorage.setItem("mb_active_tenant_id", targetTenantId);
       } else {
         // Criar novo tenant via RPC atômica caso o usuário ainda não possua barbearia
-        const { data: newTenantId, error: rpcError } = await (supabase.rpc as any)(
+        const { data: newTenantResult, error: rpcError } = await (supabase.rpc as any)(
           "create_tenant_for_current_user",
           {
             p_name: cleanName,
@@ -461,6 +461,7 @@ export const TenantOnboardingPage: React.FC = () => {
             p_phone: phone.trim(),
             p_email: email.trim() || null,
             p_address_street: street.trim() || null,
+            p_address: street.trim() || null,
             p_address_number: number.trim() || null,
             p_address_neighborhood: neighborhood.trim() || null,
             p_address_city: city.trim() || null,
@@ -471,7 +472,7 @@ export const TenantOnboardingPage: React.FC = () => {
         );
 
         if (rpcError) throw rpcError;
-        targetTenantId = newTenantId;
+        targetTenantId = typeof newTenantResult === "object" && newTenantResult !== null ? newTenantResult.id : newTenantResult;
 
         if (targetTenantId) {
           localStorage.setItem("mb_active_tenant_id", targetTenantId);
