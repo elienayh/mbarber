@@ -1053,25 +1053,38 @@ CREATE POLICY tenants_update ON public.tenants
 DROP POLICY IF EXISTS tenant_users_select ON public.tenant_users;
 DROP POLICY IF EXISTS tenant_users_insert ON public.tenant_users;
 DROP POLICY IF EXISTS tenant_users_update ON public.tenant_users;
+DROP POLICY IF EXISTS tenant_users_delete ON public.tenant_users;
 
 CREATE POLICY tenant_users_select ON public.tenant_users
-  FOR SELECT USING (
-    public.is_platform_admin() OR
+  FOR SELECT TO authenticated
+  USING (
     user_id = auth.uid() OR
-    tenant_id IN (SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid())
+    public.is_platform_admin()
   );
 
 CREATE POLICY tenant_users_insert ON public.tenant_users
-  FOR INSERT WITH CHECK (
-    public.is_platform_admin() OR
+  FOR INSERT TO authenticated
+  WITH CHECK (
     user_id = auth.uid() OR
-    tenant_id IN (SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid() AND role IN ('owner', 'admin'))
+    public.is_platform_admin()
   );
 
 CREATE POLICY tenant_users_update ON public.tenant_users
-  FOR UPDATE USING (
-    public.is_platform_admin() OR
-    tenant_id IN (SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid() AND role = 'owner')
+  FOR UPDATE TO authenticated
+  USING (
+    user_id = auth.uid() OR
+    public.is_platform_admin()
+  )
+  WITH CHECK (
+    user_id = auth.uid() OR
+    public.is_platform_admin()
+  );
+
+CREATE POLICY tenant_users_delete ON public.tenant_users
+  FOR DELETE TO authenticated
+  USING (
+    user_id = auth.uid() OR
+    public.is_platform_admin()
   );
 
 CREATE OR REPLACE FUNCTION public.check_slug_availability(

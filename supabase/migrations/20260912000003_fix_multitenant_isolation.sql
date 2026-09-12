@@ -134,38 +134,33 @@ DROP POLICY IF EXISTS tenant_users_delete ON public.tenant_users;
 CREATE POLICY tenant_users_select ON public.tenant_users
   FOR SELECT TO authenticated
   USING (
-    public.is_platform_admin() OR
     user_id = auth.uid() OR
-    tenant_id IN (
-      SELECT tu.tenant_id FROM public.tenant_users tu
-      WHERE tu.user_id = auth.uid() AND tu.is_active = true
-    )
+    public.is_platform_admin()
   );
 
 CREATE POLICY tenant_users_insert ON public.tenant_users
   FOR INSERT TO authenticated
   WITH CHECK (
-    public.is_platform_admin() OR
     user_id = auth.uid() OR
-    public.user_has_tenant_role(tenant_id, ARRAY['owner', 'admin']::public.tenant_role[])
+    public.is_platform_admin()
   );
 
 CREATE POLICY tenant_users_update ON public.tenant_users
   FOR UPDATE TO authenticated
   USING (
-    public.is_platform_admin() OR
-    public.user_has_tenant_role(tenant_id, ARRAY['owner', 'admin']::public.tenant_role[])
+    user_id = auth.uid() OR
+    public.is_platform_admin()
   )
   WITH CHECK (
-    public.is_platform_admin() OR
-    public.user_has_tenant_role(tenant_id, ARRAY['owner', 'admin']::public.tenant_role[])
+    user_id = auth.uid() OR
+    public.is_platform_admin()
   );
 
 CREATE POLICY tenant_users_delete ON public.tenant_users
   FOR DELETE TO authenticated
   USING (
-    public.is_platform_admin() OR
-    public.user_has_tenant_role(tenant_id, ARRAY['owner', 'admin']::public.tenant_role[])
+    user_id = auth.uid() OR
+    public.is_platform_admin()
   );
 
 -- ----------------------------------------------------------------------------
