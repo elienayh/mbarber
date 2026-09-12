@@ -65,6 +65,8 @@ export const SubscriptionPage: React.FC = () => {
 
   // Status de retorno do checkout via query param
   const checkoutStatus = searchParams.get("checkout");
+  const [verificationStatus, setVerificationStatus] = useState<"idle" | "checking" | "confirmed" | "unconfirmed">("idle");
+  const [verificationAttempts, setVerificationAttempts] = useState(0);
 
   const showError = (msg: string) => {
     setErrorMessage(msg);
@@ -133,6 +135,74 @@ export const SubscriptionPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [tenant?.id]);
+
+  // Verificação em tempo real no banco quando retorna com ?checkout=success
+  useEffect(() => {
+    if (checkoutStatus !== "success" || !tenant?.id) return;
+
+    let isMounted = true;
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    setVerificationStatus("checking");
+
+    const checkSubscriptionInDatabase = async () => {
+      attempts++;
+      setVerificationAttempts(attempts);
+
+      try {
+        const { data } = await (supabase.from("subscriptions") as any)
+          .select(`
+            id,
+            tenant_id,
+            plan_id,
+            status,
+            current_period_start,
+            current_period_end,
+            cancel_at_period_end,
+            stripe_subscription_id,
+            plans (
+              id, name, slug, description, price_cents, billing_cycle, max_professionals, features, is_active
+            )
+          `)
+          .eq("tenant_id", tenant.id)
+          .eq("status", "active")
+          .maybeSingle();
+
+        if (data && data.stripe_subscription_id) {
+          if (isMounted) {
+            setSubscription(data);
+            setVerificationStatus("confirmed");
+            await loadData();
+          }
+          return;
+        }
+
+        if (attempts < maxAttempts) {
+          setTimeout(checkSubscriptionInDatabase, 2500);
+        } else {
+          if (isMounted) {
+            setVerificationStatus("unconfirmed");
+          }
+        }
+      } catch (err) {
+        console.error("Erro ao verificar assinatura no banco:", err);
+        if (attempts < maxAttempts) {
+          setTimeout(checkSubscriptionInDatabase, 2500);
+        } else {
+          if (isMounted) {
+            setVerificationStatus("unconfirmed");
+          }
+        }
+      }
+    };
+
+    checkSubscriptionInDatabase();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [checkoutStatus, tenant?.id]);
 
   // Constante comercial unificada: R$ 29,90 por profissional/mês (2990 centavos)
   const PRICE_PER_PROFESSIONAL_CENTS = 2990;
@@ -313,25 +383,83 @@ export const SubscriptionPage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* Alerta de Retorno do Checkout */}
+      {/* Alerta de Retorno do Checkout com Validação Real no Banco */}
       {checkoutStatus === "success" && (
-        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-start justify-between gap-3 shadow-sm animate-fade-in">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-            <div>
-              <h4 className="font-bold text-sm">Assinatura realizada com sucesso!</h4>
-              <p className="text-xs text-emerald-700 mt-0.5">
-                Obrigado por assinar o MetricBarber. O status do seu plano foi atualizado e seus recursos estão liberados.
-              </p>
+        <>
+          {verificationStatus === "checking" && (
+            <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200 text-sky-950 flex items-start justify-between gap-3 shadow-sm animate-pulse">
+              <div className="flex items-center gap-3">
+                <RefreshCw className="w-5 h-5 text-sky-600 animate-spin shrink-0" />
+                <div>
+                  <h4 className="font-bold text-sm">Verificando confirmação do pagamento...</h4>
+                  <p className="text-xs text-sky-700 mt-0.5">
+                    Aguardando a confirmação oficial do webhook do Stripe no banco de dados (tentativa {verificationAttempts} de 5)...
+                  </p>
+                </div>
+              </div>
             </div>
-          </div>
-          <button
-            onClick={clearQueryStatus}
-            className="text-emerald-700 hover:text-emerald-900 text-xs font-semibold p-1"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+          )}
+
+          {verificationStatus === "confirmed" && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-start justify-between gap-3 shadow-sm animate-fade-in">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <h4 className="font-bold text-sm">Assinatura confirmada e ativa!</h4>
+                  <p className="text-xs text-emerald-700 mt-0.5">
+                    O pagamento foi recebido pelo Stripe, processado via webhook e a barbearia está ativa no plano contratado.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={clearQueryStatus}
+                className="text-emerald-700 hover:text-emerald-900 text-xs font-semibold p-1"
+                title="Fechar aviso"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {verificationStatus === "unconfirmed" && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 flex items-start justify-between gap-3 shadow-sm">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h4 className="font-bold text-sm">Aguardando confirmação do pagamento pelo Stripe</h4>
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    O retorno da página de checkout foi identificado, mas o webhook do Stripe ainda não registrou uma assinatura ativa para esta barbearia no banco de dados. Se você completou o pagamento, pode levar até 2 minutos para o webhook ser entregue. Se você fechou o Stripe antes de digitar os dados do cartão, a cobrança não foi realizada.
+                  </p>
+                  <div className="pt-1 flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        setVerificationAttempts(0);
+                        setVerificationStatus("checking");
+                        loadData();
+                      }}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-amber-900 bg-amber-200/80 hover:bg-amber-300 px-3 py-1 rounded-lg transition"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Verificar novamente</span>
+                    </button>
+                    <button
+                      onClick={clearQueryStatus}
+                      className="text-xs text-amber-800 underline hover:text-amber-950"
+                    >
+                      Dispensar aviso
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={clearQueryStatus}
+                className="text-amber-800 hover:text-amber-950 text-xs font-semibold p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {checkoutStatus === "cancelled" && (
