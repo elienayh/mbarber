@@ -4,6 +4,9 @@
 -- Elimina o erro PGRST203: "Could not choose the best candidate function between..."
 -- ============================================================================
 
+-- 0. Garantir que a coluna updated_at exista na tabela tenant_users
+ALTER TABLE public.tenant_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
 -- 1. Remover explicitamente a assinatura de 12 parâmetros (versão sem p_address)
 DROP FUNCTION IF EXISTS public.create_tenant_for_current_user(
   text, text, text, text, text, text, text, text, text, text, text, text
@@ -198,7 +201,7 @@ BEGIN
     phone,
     email,
     commission_rate,
-    color_tag,
+    color_hex,
     is_active,
     display_order
   )

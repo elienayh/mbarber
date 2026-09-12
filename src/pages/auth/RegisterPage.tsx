@@ -75,7 +75,7 @@ export const RegisterPage: React.FC = () => {
 
       if (data.user) {
         // Criar tenant via RPC
-        const { error: tenantError } = await (supabase.rpc as any)("create_tenant_for_current_user", {
+        const { data: tenantResult, error: tenantError } = await (supabase.rpc as any)("create_tenant_for_current_user", {
           p_slug: cleanSlug,
           p_name: barberName.trim(),
           p_trade_name: barberName.trim(),
@@ -84,7 +84,8 @@ export const RegisterPage: React.FC = () => {
         });
 
         if (tenantError) {
-          console.warn("Aviso ao criar tenant inicial:", tenantError);
+          console.error("Erro ao criar barbearia inicial:", tenantError);
+          throw new Error(tenantError?.message || "Não foi possível configurar a barbearia após o cadastro.");
         }
 
         await refreshUserData();

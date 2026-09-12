@@ -1,0 +1,119 @@
+[
+  {
+    "table": "tenant_users",
+    "col": "tenants",
+    "error": "column tenant_users.tenants does not exist",
+    "occurrences": [
+      "src/contexts/AuthContext.tsx (select)",
+      "src/contexts/AuthContext.tsx (select)"
+    ]
+  },
+  {
+    "table": "professionals",
+    "col": "professional_services",
+    "error": "column professionals.professional_services does not exist",
+    "occurrences": [
+      "src/pages/tenant/ProfessionalsPage.tsx (select)"
+    ]
+  },
+  {
+    "table": "tenants",
+    "col": "professionals",
+    "error": "column tenants.professionals does not exist",
+    "occurrences": [
+      "src/pages/admin/TenantsListPage.tsx (select)"
+    ]
+  },
+  {
+    "table": "subscriptions",
+    "col": "plans",
+    "error": "column subscriptions.plans does not exist",
+    "occurrences": [
+      "src/pages/admin/AdminDashboardPage.tsx (select)",
+      "src/pages/tenant/SettingsPage.tsx (select)",
+      "src/pages/tenant/SubscriptionPage.tsx (select)"
+    ]
+  },
+  {
+    "table": "appointments",
+    "col": "customers",
+    "error": "column appointments.customers does not exist",
+    "occurrences": [
+      "src/pages/tenant/AgendaPage.tsx (select)",
+      "src/pages/tenant/DashboardPage.tsx (select)"
+    ]
+  },
+  {
+    "table": "appointments",
+    "col": "services",
+    "error": "column appointments.services does not exist",
+    "occurrences": [
+      "src/pages/tenant/AgendaPage.tsx (select)",
+      "src/pages/tenant/DashboardPage.tsx (select)",
+      "src/pages/tenant/ReportsPage.tsx (select)"
+    ]
+  },
+  {
+    "table": "appointments",
+    "col": "professionals",
+    "error": "column appointments.professionals does not exist",
+    "occurrences": [
+      "src/pages/tenant/DashboardPage.tsx (select)",
+      "src/pages/tenant/ReportsPage.tsx (select)"
+    ]
+  },
+  {
+    "table": "schedule_blocks",
+    "col": "start_date",
+    "error": "column schedule_blocks.start_date does not exist",
+    "occurrences": [
+      "src/pages/tenant/AgendaPage.tsx (filter)",
+      "src/pages/tenant/AgendaPage.tsx (filter)",
+      "src/pages/tenant/AgendaPage.tsx (insert)"
+    ]
+  },
+  {
+    "table": "schedule_blocks",
+    "col": "reason",
+    "error": "column schedule_blocks.reason does not exist",
+    "occurrences": [
+      "src/pages/tenant/AgendaPage.tsx (insert)"
+    ]
+  },
+  {
+    "table": "schedule_blocks",
+    "col": "end_date",
+    "error": "column schedule_blocks.end_date does not exist",
+    "occurrences": [
+      "src/pages/tenant/AgendaPage.tsx (insert)"
+    ]
+  },
+  {
+    "table": "schedule_blocks",
+    "col": "null",
+    "error": "column schedule_blocks.null does not exist",
+    "occurrences": [
+      "src/pages/tenant/AgendaPage.tsx (insert)",
+      "src/pages/tenant/AgendaPage.tsx (insert)"
+    ]
+  },
+  {
+    "table": "services",
+    "col": "professional_services",
+    "error": "column services.professional_services does not exist",
+    "occurrences": [
+      "src/pages/tenant/ServicesPage.tsx (select)",
+      "src/pages/tenant/ServicesPage.tsx (select)",
+      "src/pages/tenant/ServicesPage.tsx (select)"
+    ]
+  },
+  {
+    "table": "financial_transactions",
+    "col": "professionals",
+    "error": "column financial_transactions.professionals does not exist",
+    "occurrences": [
+      "src/pages/tenant/FinancialPage.tsx (select)",
+      "src/pages/tenant/FinancialPage.tsx (select)"
+    ]
+  }
+]

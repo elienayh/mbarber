@@ -136,41 +136,52 @@ export const TenantsListPage: React.FC = () => {
     const targetId = tenantToDelete.id;
 
     try {
-      // 1. Tentar executar via RPC dedicada delete_tenant_by_admin
+      // 1. Tentar executar via RPC atômica delete_tenant_by_admin
       let rpcSucceeded = false;
       try {
-        const { error: rpcErr } = await (supabase.rpc as any)("delete_tenant_by_admin", {
+        const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)("delete_tenant_by_admin", {
           p_tenant_id: targetId,
         });
         if (!rpcErr) {
           rpcSucceeded = true;
+        } else {
+          console.warn("RPC delete_tenant_by_admin retornou erro:", rpcErr);
         }
       } catch (rpcCallErr) {
-        console.warn("RPC delete_tenant_by_admin não encontrada ou erro, prosseguindo com exclusão ordenada direta:", rpcCallErr);
+        console.warn("Chamada RPC falhou, tentando exclusão ordenada direta:", rpcCallErr);
       }
 
       // 2. Fallback: Deleção ordenada em sequência respeitando restrições de chaves estrangeiras
       if (!rpcSucceeded) {
+        await (supabase.from("financial_transactions") as any).delete().eq("tenant_id", targetId);
         await (supabase.from("appointments") as any).delete().eq("tenant_id", targetId);
         await (supabase.from("appointment_series") as any).delete().eq("tenant_id", targetId);
         await (supabase.from("schedule_blocks") as any).delete().eq("tenant_id", targetId);
-        await (supabase.from("product_movements") as any).delete().eq("tenant_id", targetId);
+        await (supabase.from("stock_movements") as any).delete().eq("tenant_id", targetId);
         await (supabase.from("products") as any).delete().eq("tenant_id", targetId);
+        await (supabase.from("professional_services") as any).delete().eq("tenant_id", targetId);
         await (supabase.from("services") as any).delete().eq("tenant_id", targetId);
+        await (supabase.from("professional_schedules") as any).delete().eq("tenant_id", targetId);
         await (supabase.from("professionals") as any).delete().eq("tenant_id", targetId);
         await (supabase.from("customers") as any).delete().eq("tenant_id", targetId);
         await (supabase.from("business_hours") as any).delete().eq("tenant_id", targetId);
         await (supabase.from("subscriptions") as any).delete().eq("tenant_id", targetId);
+        await (supabase.from("notification_logs") as any).delete().eq("tenant_id", targetId);
+        await (supabase.from("audit_logs") as any).delete().eq("tenant_id", targetId);
         await (supabase.from("tenant_users") as any).delete().eq("tenant_id", targetId);
 
-        const { error: deleteTenantError } = await (supabase.from("tenants") as any)
+        const { data: deletedRows, error: deleteTenantError } = await (supabase.from("tenants") as any)
           .delete()
-          .eq("id", targetId);
+          .eq("id", targetId)
+          .select();
 
         if (deleteTenantError) throw deleteTenantError;
+        if (!deletedRows || deletedRows.length === 0) {
+          throw new Error("A exclusão não foi autorizada ou não afetou nenhum registro no banco. Verifique permissões.");
+        }
       }
 
-      // Atualizar lista local
+      // Atualizar lista local APENAS após confirmação real da exclusão no banco
       setTenants((prev) => prev.filter((t) => t.id !== targetId));
       if (selectedTenant && selectedTenant.id === targetId) {
         setSelectedTenant(null);
@@ -181,7 +192,7 @@ export const TenantsListPage: React.FC = () => {
       setTimeout(() => setDeleteSuccessMessage(null), 6000);
     } catch (err: any) {
       console.error("Erro ao excluir barbearia:", err);
-      setDeleteError(err?.message || "Não foi possível excluir a barbearia. Verifique permissões.");
+      setDeleteError(err?.message || "Não foi possível excluir a barbearia. Verifique suas permissões no banco.");
     } finally {
       setDeletingTenant(false);
     }
@@ -284,13 +295,35 @@ export const TenantsListPage: React.FC = () => {
         updated_at: new Date().toISOString(),
       };
 
-      const { error: updateError } = await (supabase.from("tenants") as any)
-        .update(payload)
-        .eq("id", selectedTenant.id);
+      // 2. Persistir alterações no Supabase (tenta RPC de super admin ou update direto verificado)
+      let updateSucceeded = false;
+      try {
+        const { data: rpcUpdate, error: rpcErr } = await (supabase.rpc as any)("update_tenant_by_admin", {
+          p_tenant_id: selectedTenant.id,
+          p_payload: payload,
+        });
+        if (!rpcErr && rpcUpdate) {
+          updateSucceeded = true;
+        } else if (rpcErr) {
+          console.warn("RPC update_tenant_by_admin retornou aviso:", rpcErr);
+        }
+      } catch (rpcErr) {
+        console.warn("RPC update_tenant_by_admin não disponível, tentando update direto:", rpcErr);
+      }
 
-      if (updateError) throw updateError;
+      if (!updateSucceeded) {
+        const { data: updatedRows, error: updateError } = await (supabase.from("tenants") as any)
+          .update(payload)
+          .eq("id", selectedTenant.id)
+          .select();
 
-      // Atualizar lista local
+        if (updateError) throw updateError;
+        if (!updatedRows || updatedRows.length === 0) {
+          throw new Error("As alterações não foram salvas pelo banco de dados. Verifique suas permissões de administrador.");
+        }
+      }
+
+      // Atualizar lista local apenas após confirmação real
       setTenants((prev) =>
         prev.map((t) =>
           t.id === selectedTenant.id ? { ...t, ...payload, slug: cleanSlug } : t

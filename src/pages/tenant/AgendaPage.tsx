@@ -143,8 +143,8 @@ export const AgendaPage: React.FC = () => {
         (supabase.from("schedule_blocks") as any)
           .select("*")
           .eq("tenant_id", tenant.id)
-          .gte("start_date", selectedDate)
-          .lte("start_date", selectedDate),
+          .gte("start_time", `${selectedDate}T00:00:00`)
+          .lte("start_time", `${selectedDate}T23:59:59`),
       ]);
 
       let loadedBarbers: Barber[] = (professionalsData || []).map((professional: any) => ({
@@ -221,17 +221,27 @@ export const AgendaPage: React.FC = () => {
       // Processa e mescla bloqueios da agenda (almoço, folga, compromisso)
       let loadedBlocks: ScheduleBlock[] = [];
       if (blocksData && Array.isArray(blocksData)) {
-        loadedBlocks = blocksData.map((b: any) => ({
-          id: b.id,
-          tenantId: b.tenant_id,
-          barberId: b.professional_id || null,
-          date: b.start_date || selectedDate,
-          startTime: b.start_time ? b.start_time.slice(0, 5) : "00:00",
-          endTime: b.end_time ? b.end_time.slice(0, 5) : "23:59",
-          isAllDay: b.is_all_day ?? (!b.start_time),
-          title: b.title || b.reason || "Bloqueado",
-          reason: b.reason,
-        }));
+        loadedBlocks = blocksData.map((b: any) => {
+          const startDateStr = b.start_time ? b.start_time.split("T")[0] : selectedDate;
+          const startTimeStr = b.start_time && b.start_time.includes("T")
+            ? b.start_time.split("T")[1].slice(0, 5)
+            : (b.start_time ? b.start_time.slice(0, 5) : "00:00");
+          const endTimeStr = b.end_time && b.end_time.includes("T")
+            ? b.end_time.split("T")[1].slice(0, 5)
+            : (b.end_time ? b.end_time.slice(0, 5) : "23:59");
+
+          return {
+            id: b.id,
+            tenantId: b.tenant_id,
+            barberId: b.professional_id || null,
+            date: startDateStr,
+            startTime: startTimeStr,
+            endTime: endTimeStr,
+            isAllDay: b.is_all_day ?? (!b.start_time),
+            title: b.title || "Bloqueado",
+            reason: b.title || "Bloqueado",
+          };
+        });
       }
 
       // Merge com bloqueios em localStorage
@@ -464,20 +474,28 @@ export const AgendaPage: React.FC = () => {
     };
 
     try {
-      await (supabase.from("schedule_blocks") as any).insert({
+      const startDateTime = newBlock.isAllDay
+        ? `${newBlock.date}T00:00:00`
+        : `${newBlock.date}T${newBlock.startTime || "08:00"}:00`;
+      const endDateTime = newBlock.isAllDay
+        ? `${newBlock.date}T23:59:59`
+        : `${newBlock.date}T${newBlock.endTime || "09:00"}:00`;
+
+      const { error: insertBlockErr } = await (supabase.from("schedule_blocks") as any).insert({
         id: blockId,
         tenant_id: tenant.id,
-        professional_id: newBlock.barberId,
-        start_date: newBlock.date,
-        end_date: newBlock.date,
-        start_time: newBlock.isAllDay ? null : `${newBlock.startTime}:00`,
-        end_time: newBlock.isAllDay ? null : `${newBlock.endTime}:00`,
-        is_all_day: newBlock.isAllDay,
-        reason: newBlock.title,
-        title: newBlock.title,
+        professional_id: newBlock.barberId || null,
+        title: newBlock.title || "Bloqueio",
+        start_time: startDateTime,
+        end_time: endDateTime,
+        is_all_day: newBlock.isAllDay ?? false,
       });
+
+      if (insertBlockErr) {
+        console.error("Erro ao persistir bloqueio na tabela schedule_blocks:", insertBlockErr);
+      }
     } catch (err) {
-      console.warn("Supabase schedule_blocks save:", err);
+      console.error("Exceção ao salvar bloqueio na agenda:", err);
     }
 
     try {
