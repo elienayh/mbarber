@@ -178,9 +178,12 @@ Deno.serve(async (request) => {
       allow_promotion_codes: 'true',
     };
 
+    // NOTA ARQUITETURAL: O Checkout do Stripe utiliza exclusivamente o Price ID (plan.stripe_price_id).
+    // O stripe_product_id é referencial e não é aceito no parâmetro 'line_items[0][price]'.
+    // Como o modelo de precificação é por assento (per-seat), multiplicamos o Price ID pela quantidade solicitada.
     if (isRealStripePrice) {
       sessionParams['line_items[0][price]'] = plan.stripe_price_id;
-      sessionParams['line_items[0][quantity]'] = '1';
+      sessionParams['line_items[0][quantity]'] = String(requestedSeats);
     } else {
       sessionParams['line_items[0][quantity]'] = String(requestedSeats);
       sessionParams['line_items[0][price_data][currency]'] = 'brl';
@@ -213,6 +216,5 @@ Deno.serve(async (request) => {
   } catch (error) {
     console.error('[stripe-create-checkout-session]', error);
     return response({ error: error instanceof Error ? error.message : 'Não foi possível gerar a sessão de pagamento.' }, 400);
-  }
   }
 });

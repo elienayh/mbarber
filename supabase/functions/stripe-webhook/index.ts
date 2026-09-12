@@ -99,6 +99,36 @@ Deno.serve(async (request) => {
       }
     }
 
+    // Se planId ainda não foi determinado (ex: alteração direto no portal Stripe), deduz pela quantidade de assentos
+    if (!planId) {
+      const seatsCount = Number(
+        metadata.professionals_count ||
+        subscription.metadata?.professionals_count ||
+        subscription.items?.data?.[0]?.quantity ||
+        1
+      );
+
+      const { data: matchedPlan } = await adminClient
+        .from('plans')
+        .select('id')
+        .eq('is_active', true)
+        .eq('max_professionals', seatsCount)
+        .maybeSingle();
+
+      if (matchedPlan) {
+        planId = matchedPlan.id;
+      } else {
+        const { data: defaultPlan } = await adminClient
+          .from('plans')
+          .select('id')
+          .eq('is_active', true)
+          .order('max_professionals', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (defaultPlan) planId = defaultPlan.id;
+      }
+    }
+
     if (['checkout.session.completed', 'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(event.type) && tenantId && subscriptionId) {
       const canceled = event.type === 'customer.subscription.deleted';
       const status = canceled ? 'canceled' : subscription.status;
