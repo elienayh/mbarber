@@ -384,24 +384,32 @@ export const ProfessionalsPage: React.FC = () => {
           avatar_url: avatarUrl || data.avatar_url || null,
         };
 
-        // Salva vínculo de serviços no Supabase sem quebrar se RLS bloquear
-        try {
-          await (supabase.from("professional_services") as any)
-            .delete()
-            .eq("tenant_id", tenant.id)
-            .eq("professional_id", data.id);
+        // Salva vínculo de serviços no Supabase apenas se tiverem sido alterados
+        const initialServiceIds: string[] = (editingProfessional?.professional_services || []).map((item: any) => item.service_id);
+        const servicesChanged =
+          !editingProfessional ||
+          initialServiceIds.length !== selectedServiceIds.length ||
+          !initialServiceIds.every((id) => selectedServiceIds.includes(id));
 
-          if (selectedServiceIds.length > 0) {
-            await (supabase.from("professional_services") as any).insert(
-              selectedServiceIds.map((serviceId) => ({
-                tenant_id: tenant.id,
-                professional_id: data.id,
-                service_id: serviceId,
-              }))
-            );
+        if (servicesChanged) {
+          try {
+            await (supabase.from("professional_services") as any)
+              .delete()
+              .eq("tenant_id", tenant.id)
+              .eq("professional_id", data.id);
+
+            if (selectedServiceIds.length > 0) {
+              await (supabase.from("professional_services") as any).insert(
+                selectedServiceIds.map((serviceId) => ({
+                  tenant_id: tenant.id,
+                  professional_id: data.id,
+                  service_id: serviceId,
+                }))
+              );
+            }
+          } catch (servErr) {
+            console.warn("Vínculo de serviços Supabase RLS:", servErr);
           }
-        } catch (servErr) {
-          console.warn("Vínculo de serviços Supabase RLS:", servErr);
         }
       } else {
         console.warn("Supabase profissionais save error:", saveError);

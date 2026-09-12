@@ -636,28 +636,6 @@ export const SubscriptionPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Barra de Progresso de Profissionais */}
-        <div className="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-600 bg-white">
-          <div className="flex-1 max-w-md">
-            <div className="flex justify-between mb-1 text-[11px] font-semibold text-slate-700">
-              <span>Capacidade da Equipe</span>
-              <span>
-                {Math.min(100, Math.round((activeProfessionalsCount / (maxAllowedProfessionals || 1)) * 100))}% utilizado
-              </span>
-            </div>
-            <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div
-                className={`h-full transition-all duration-500 ${
-                  activeProfessionalsCount >= maxAllowedProfessionals ? "bg-amber-500" : "bg-emerald-500"
-                }`}
-                style={{
-                  width: `${Math.min(100, Math.max(5, (activeProfessionalsCount / (maxAllowedProfessionals || 1)) * 100))}%`,
-                }}
-              />
-            </div>
-          </div>
-        </div>
-
         {/* Barra de Ações Rápidas */}
         <div className="p-6 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-xs text-slate-500">
