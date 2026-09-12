@@ -429,28 +429,21 @@ export const ProfessionalsPage: React.FC = () => {
       work_schedule: workSchedule,
     };
 
-    // Helper para salvar em todos os caches relevantes para o chat e agenda
+    // Helper para salvar em todos os caches relevantes para o chat e agenda deste tenant
     const syncAllLocalStorage = (updatedList: any[]) => {
       try {
         localStorage.setItem(`mb_professionals_${tenant.id}`, JSON.stringify(updatedList));
         if (tenant.slug) {
           localStorage.setItem(`mb_professionals_${tenant.slug}`, JSON.stringify(updatedList));
-        }
-        localStorage.setItem("mb_professionals_default", JSON.stringify(updatedList));
-        localStorage.setItem("mb_professionals_vintage-barber", JSON.stringify(updatedList));
-
-        // Atualiza catalogo publico no cache para o chat refletir imediatamente
-        const targetSlugs = [tenant.slug, "vintage-barber"].filter(Boolean);
-        targetSlugs.forEach((s) => {
           try {
-            const rawCat = localStorage.getItem(`mb_public_catalog_${s}`);
+            const rawCat = localStorage.getItem(`mb_public_catalog_${tenant.slug}`);
             if (rawCat) {
               const parsedCat = JSON.parse(rawCat);
               parsedCat.professionals = updatedList;
-              localStorage.setItem(`mb_public_catalog_${s}`, JSON.stringify(parsedCat));
+              localStorage.setItem(`mb_public_catalog_${tenant.slug}`, JSON.stringify(parsedCat));
             }
           } catch {}
-        });
+        }
       } catch (storageErr) {
         console.warn("Storage sync error:", storageErr);
       }
@@ -490,21 +483,15 @@ export const ProfessionalsPage: React.FC = () => {
         localStorage.setItem(`mb_professionals_${tenant.id}`, JSON.stringify(updated));
         if (tenant.slug) {
           localStorage.setItem(`mb_professionals_${tenant.slug}`, JSON.stringify(updated));
-        }
-        localStorage.setItem("mb_professionals_default", JSON.stringify(updated));
-        localStorage.setItem("mb_professionals_vintage-barber", JSON.stringify(updated));
-
-        const targetSlugs = [tenant.slug, "vintage-barber"].filter(Boolean);
-        targetSlugs.forEach((s) => {
           try {
-            const rawCat = localStorage.getItem(`mb_public_catalog_${s}`);
+            const rawCat = localStorage.getItem(`mb_public_catalog_${tenant.slug}`);
             if (rawCat) {
               const parsedCat = JSON.parse(rawCat);
               parsedCat.professionals = updated;
-              localStorage.setItem(`mb_public_catalog_${s}`, JSON.stringify(parsedCat));
+              localStorage.setItem(`mb_public_catalog_${tenant.slug}`, JSON.stringify(parsedCat));
             }
           } catch {}
-        });
+        }
       } catch {}
       return updated;
     });

@@ -133,15 +133,14 @@ export const SettingsPage: React.FC = () => {
 
     const loadSettings = async () => {
       const tenantId = tenant?.id || "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
-      const localSlugDate = localStorage.getItem(`mb_slug_changed_${tenantId}`) || localStorage.getItem("mb_slug_changed_default");
+      const localSlugDate = localStorage.getItem(`mb_slug_changed_${tenantId}`);
 
       // Check for user-saved tenant configurations in localStorage first
       let localOverride: any = null;
       try {
         const stored =
           localStorage.getItem(`mb_custom_tenant_${tenantId}`) ||
-          localStorage.getItem(`mb_settings_${tenantId}`) ||
-          localStorage.getItem("mb_active_tenant");
+          localStorage.getItem(`mb_settings_${tenantId}`);
         if (stored) {
           localOverride = JSON.parse(stored);
         }
@@ -505,7 +504,6 @@ export const SettingsPage: React.FC = () => {
       if (isSlugChanged) {
         nextSlugLastChangedAt = new Date().toISOString();
         localStorage.setItem(`mb_slug_changed_${targetTenantId}`, nextSlugLastChangedAt);
-        localStorage.setItem("mb_slug_changed_default", nextSlugLastChangedAt);
       }
 
       // Supabase synchronization

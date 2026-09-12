@@ -42,11 +42,13 @@ export const FinancialPage: React.FC = () => {
         .order("created_at", { ascending: false })
         .limit(100);
 
-      if (data && data.length > 0) {
-        setTransactions(data);
-        try {
-          localStorage.setItem(`mb_transactions_${tenant.id}`, JSON.stringify(data));
-        } catch {}
+      if (!queryError) {
+        setTransactions(data || []);
+        if (data && data.length > 0) {
+          try {
+            localStorage.setItem(`mb_transactions_${tenant.id}`, JSON.stringify(data));
+          } catch {}
+        }
       }
       setError(null);
       setLoading(false);

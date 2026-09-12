@@ -519,28 +519,40 @@ CREATE POLICY customers_tenant_isolation ON public.customers
 -- Services
 DROP POLICY IF EXISTS services_tenant_isolation ON public.services;
 CREATE POLICY services_tenant_isolation ON public.services
-  FOR ALL USING (
+  FOR ALL TO authenticated
+  USING (
     public.is_platform_admin() OR
-    tenant_id = public.current_tenant_id() OR
-    is_active = true
+    tenant_id IN (SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid() AND is_active = true)
+  )
+  WITH CHECK (
+    public.is_platform_admin() OR
+    tenant_id IN (SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid() AND is_active = true)
   );
 
 -- Professionals
 DROP POLICY IF EXISTS professionals_tenant_isolation ON public.professionals;
 CREATE POLICY professionals_tenant_isolation ON public.professionals
-  FOR ALL USING (
+  FOR ALL TO authenticated
+  USING (
     public.is_platform_admin() OR
-    tenant_id = public.current_tenant_id() OR
-    is_active = true
+    tenant_id IN (SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid() AND is_active = true)
+  )
+  WITH CHECK (
+    public.is_platform_admin() OR
+    tenant_id IN (SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid() AND is_active = true)
   );
 
 -- Schedule Blocks
 DROP POLICY IF EXISTS schedule_blocks_tenant_isolation ON public.schedule_blocks;
 CREATE POLICY schedule_blocks_tenant_isolation ON public.schedule_blocks
-  FOR ALL USING (
+  FOR ALL TO authenticated
+  USING (
     public.is_platform_admin() OR
-    tenant_id = public.current_tenant_id() OR
-    true
+    tenant_id IN (SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid() AND is_active = true)
+  )
+  WITH CHECK (
+    public.is_platform_admin() OR
+    tenant_id IN (SELECT tenant_id FROM public.tenant_users WHERE user_id = auth.uid() AND is_active = true)
   );
 
 
@@ -1522,18 +1534,21 @@ GRANT EXECUTE ON FUNCTION public.get_available_slots(UUID, UUID, UUID, DATE) TO 
 GRANT EXECUTE ON FUNCTION public.book_public_appointment(TEXT, UUID, UUID, DATE, TIME, TEXT, TEXT, TEXT) TO anon, authenticated;
 
 DROP POLICY IF EXISTS services_public_select ON public.services;
-CREATE POLICY services_public_select ON public.services
-  FOR SELECT TO anon, authenticated
+DROP POLICY IF EXISTS services_anon_select ON public.services;
+CREATE POLICY services_anon_select ON public.services
+  FOR SELECT TO anon
   USING (is_active = true);
 
 DROP POLICY IF EXISTS professionals_public_select ON public.professionals;
-CREATE POLICY professionals_public_select ON public.professionals
-  FOR SELECT TO anon, authenticated
+DROP POLICY IF EXISTS professionals_anon_select ON public.professionals;
+CREATE POLICY professionals_anon_select ON public.professionals
+  FOR SELECT TO anon
   USING (is_active = true);
 
 DROP POLICY IF EXISTS business_hours_public_select ON public.business_hours;
-CREATE POLICY business_hours_public_select ON public.business_hours
-  FOR SELECT TO anon, authenticated
+DROP POLICY IF EXISTS business_hours_anon_select ON public.business_hours;
+CREATE POLICY business_hours_anon_select ON public.business_hours
+  FOR SELECT TO anon
   USING (true);
 
 -- 9. Exclusão Ordenada e Segura de Barbearia pelo Super Admin

@@ -158,11 +158,7 @@ export const AgendaPage: React.FC = () => {
 
       // Mescla com cache local de profissionais para carregar horários próprios e fotos
       try {
-        const cachedProsRaw =
-          localStorage.getItem(`mb_professionals_${tenant.id}`) ||
-          (tenant.slug ? localStorage.getItem(`mb_professionals_${tenant.slug}`) : null) ||
-          localStorage.getItem("mb_professionals_default") ||
-          localStorage.getItem("mb_professionals_vintage-barber");
+        const cachedProsRaw = localStorage.getItem(`mb_professionals_${tenant.id}`);
 
         if (cachedProsRaw) {
           const cachedPros = JSON.parse(cachedProsRaw);
@@ -172,14 +168,26 @@ export const AgendaPage: React.FC = () => {
             cachedPros.forEach((p: any) => {
               if (p.is_active !== false) {
                 const ex = barMap.get(p.id);
-                barMap.set(p.id, {
-                  id: p.id,
-                  name: p.name,
-                  nickname: p.nickname || null,
-                  color: p.color_hex || ex?.color || "var(--accent)",
-                  avatarUrl: p.avatar_url || ex?.avatarUrl || null,
-                  workSchedule: p.work_schedule || p.workSchedule || ex?.workSchedule || null,
-                });
+                // Apenas enriquece profissionais que pertencem comprovadamente a este tenant
+                if (ex) {
+                  barMap.set(p.id, {
+                    ...ex,
+                    name: p.name || ex.name,
+                    nickname: p.nickname || ex.nickname,
+                    color: p.color_hex || ex.color || "var(--accent)",
+                    avatarUrl: p.avatar_url || ex.avatarUrl || null,
+                    workSchedule: p.work_schedule || p.workSchedule || ex.workSchedule || null,
+                  });
+                } else if (p.tenant_id === tenant.id) {
+                  barMap.set(p.id, {
+                    id: p.id,
+                    name: p.name,
+                    nickname: p.nickname || null,
+                    color: p.color_hex || "var(--accent)",
+                    avatarUrl: p.avatar_url || null,
+                    workSchedule: p.work_schedule || p.workSchedule || null,
+                  });
+                }
               }
             });
             loadedBarbers = Array.from(barMap.values());
@@ -246,26 +254,18 @@ export const AgendaPage: React.FC = () => {
 
       // Merge com bloqueios em localStorage
       try {
-        const keys = [
-          `mb_schedule_blocks_${tenant.id}`,
-          tenant.slug ? `mb_schedule_blocks_${tenant.slug}` : null,
-          "mb_schedule_blocks_default",
-          "mb_schedule_blocks_vintage-barber",
-        ].filter(Boolean) as string[];
-
-        for (const k of keys) {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (Array.isArray(parsed)) {
-              const bMap = new Map<string, ScheduleBlock>();
-              loadedBlocks.forEach((b) => bMap.set(b.id, b));
-              parsed.forEach((b: any) => {
-                if (b.date === selectedDate) bMap.set(b.id, b);
-              });
-              loadedBlocks = Array.from(bMap.values());
-              break;
-            }
+        const raw = localStorage.getItem(`mb_schedule_blocks_${tenant.id}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const bMap = new Map<string, ScheduleBlock>();
+            loadedBlocks.forEach((b) => bMap.set(b.id, b));
+            parsed.forEach((b: any) => {
+              if (b.date === selectedDate && (!b.tenantId || b.tenantId === tenant.id)) {
+                bMap.set(b.id, b);
+              }
+            });
+            loadedBlocks = Array.from(bMap.values());
           }
         }
       } catch {}
@@ -499,22 +499,11 @@ export const AgendaPage: React.FC = () => {
     }
 
     try {
-      const keys = [
-        `mb_schedule_blocks_${tenant.id}`,
-        tenant.slug ? `mb_schedule_blocks_${tenant.slug}` : null,
-        "mb_schedule_blocks_default",
-        "mb_schedule_blocks_vintage-barber",
-      ].filter(Boolean) as string[];
-
-      keys.forEach((k) => {
-        let existing: ScheduleBlock[] = [];
-        try {
-          const raw = localStorage.getItem(k);
-          if (raw) existing = JSON.parse(raw);
-        } catch {}
-        const updated = [...existing.filter((x) => x.id !== newBlock.id), newBlock];
-        localStorage.setItem(k, JSON.stringify(updated));
-      });
+      let existing: ScheduleBlock[] = [];
+      const raw = localStorage.getItem(`mb_schedule_blocks_${tenant.id}`);
+      if (raw) existing = JSON.parse(raw);
+      const updated = [...existing.filter((x) => x.id !== newBlock.id), newBlock];
+      localStorage.setItem(`mb_schedule_blocks_${tenant.id}`, JSON.stringify(updated));
     } catch {}
 
     if (newBlock.date === selectedDate) {
@@ -540,23 +529,12 @@ export const AgendaPage: React.FC = () => {
     }
 
     try {
-      const keys = [
-        `mb_schedule_blocks_${tenant.id}`,
-        tenant.slug ? `mb_schedule_blocks_${tenant.slug}` : null,
-        "mb_schedule_blocks_default",
-        "mb_schedule_blocks_vintage-barber",
-      ].filter(Boolean) as string[];
-
-      keys.forEach((k) => {
-        try {
-          const raw = localStorage.getItem(k);
-          if (raw) {
-            const existing: ScheduleBlock[] = JSON.parse(raw);
-            const filtered = existing.filter((x) => x.id !== block.id);
-            localStorage.setItem(k, JSON.stringify(filtered));
-          }
-        } catch {}
-      });
+      const raw = localStorage.getItem(`mb_schedule_blocks_${tenant.id}`);
+      if (raw) {
+        const existing: ScheduleBlock[] = JSON.parse(raw);
+        const filtered = existing.filter((x) => x.id !== block.id);
+        localStorage.setItem(`mb_schedule_blocks_${tenant.id}`, JSON.stringify(filtered));
+      }
     } catch {}
 
     setBlocks((current) => current.filter((x) => x.id !== block.id));

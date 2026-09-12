@@ -159,11 +159,13 @@ export const StockPage: React.FC = () => {
         .eq("is_active", true)
         .order("name");
 
-      if (data && data.length > 0) {
-        setProducts(data);
-        try {
-          localStorage.setItem(`mb_products_${tenant.id}`, JSON.stringify(data));
-        } catch {}
+      if (!loadError) {
+        setProducts(data || []);
+        if (data && data.length > 0) {
+          try {
+            localStorage.setItem(`mb_products_${tenant.id}`, JSON.stringify(data));
+          } catch {}
+        }
       }
       setLoading(false);
     };
