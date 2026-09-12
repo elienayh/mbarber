@@ -29,8 +29,9 @@ const response = (body: Record<string, unknown>, status = 200) =>
   });
 
 const stripeGet = async (path: string) => {
+  const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')?.trim();
   const result = await fetch(`https://api.stripe.com/v1${path}`, {
-    headers: { Authorization: `Bearer ${Deno.env.get('STRIPE_SECRET_KEY')}` },
+    headers: { Authorization: `Bearer ${stripeKey}` },
   });
   const data = await result.json();
   if (!result.ok) throw new Error(data?.error?.message || 'Stripe request failed');
@@ -43,9 +44,9 @@ Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return response({ error: 'Method not allowed' }, 405);
 
-  const signingSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET');
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const signingSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')?.trim();
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim();
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim();
   if (!signingSecret || !serviceRoleKey || !supabaseUrl) return response({ error: 'Webhook secrets are not configured.' }, 500);
 
   const rawBody = await request.text();
@@ -73,12 +74,30 @@ Deno.serve(async (request) => {
     const subscriptionId = object.subscription || object.id;
     let subscription = object;
     if (event.type.startsWith('checkout.session') && object.subscription) {
-      subscription = await stripeGet(`/subscriptions/${object.subscription}`);
+      try {
+        subscription = await stripeGet(`/subscriptions/${object.subscription}`);
+      } catch (subErr) {
+        console.warn('Could not fetch subscription details:', subErr);
+      }
     }
 
-    const tenantId = metadata.tenant_id || subscription.metadata?.tenant_id;
-    const planId = metadata.plan_id || subscription.metadata?.plan_id;
+    let tenantId = metadata.tenant_id || subscription.metadata?.tenant_id;
+    let planId = metadata.plan_id || subscription.metadata?.plan_id;
     const customerId = subscription.customer || object.customer;
+
+    // Se o webhook não trouxer metadata diretamente, tenta localizar pelo customerId ou subscriptionId existente
+    if (!tenantId && (customerId || subscriptionId)) {
+      const { data: existingSub } = await adminClient
+        .from('subscriptions')
+        .select('tenant_id, plan_id')
+        .or(`stripe_customer_id.eq.${customerId},stripe_subscription_id.eq.${subscriptionId}`)
+        .maybeSingle();
+
+      if (existingSub) {
+        tenantId = existingSub.tenant_id;
+        if (!planId) planId = existingSub.plan_id;
+      }
+    }
 
     if (['checkout.session.completed', 'customer.subscription.created', 'customer.subscription.updated', 'customer.subscription.deleted'].includes(event.type) && tenantId && subscriptionId) {
       const canceled = event.type === 'customer.subscription.deleted';
@@ -102,9 +121,15 @@ Deno.serve(async (request) => {
 
     if (event.type === 'invoice.payment_succeeded' && customerId) {
       await adminClient.from('subscriptions').update({ status: 'active', updated_at: new Date().toISOString() }).eq('stripe_customer_id', customerId);
+      if (tenantId) {
+        await adminClient.from('tenants').update({ status: 'active' }).eq('id', tenantId);
+      }
     }
     if (event.type === 'invoice.payment_failed' && customerId) {
       await adminClient.from('subscriptions').update({ status: 'past_due', updated_at: new Date().toISOString() }).eq('stripe_customer_id', customerId);
+      if (tenantId) {
+        await adminClient.from('tenants').update({ status: 'past_due' }).eq('id', tenantId);
+      }
     }
 
     await adminClient.from('webhook_events').update({ status: 'processed', processed_at: new Date().toISOString() }).eq('event_id', event.id);
