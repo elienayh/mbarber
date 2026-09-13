@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Scissors, Plus, Clock, Edit2, X, Tag, DollarSign, Timer, Users, CheckCircle2, AlertCircle } from "lucide-react";
+import { Scissors, Plus, Clock, Edit2, Trash2, X, Tag, DollarSign, Timer, Users, CheckCircle2, AlertCircle } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { DeleteConfirmModal } from "@/components/common/DeleteConfirmModal";
+import { recordAuditLog } from "@/lib/audit";
 
 const COMMON_CATEGORIES = ["Cabelo", "Barba", "Combo", "Sobrancelha", "Tratamento", "Infantil", "Geral"];
 const COMMON_DURATIONS = [15, 20, 30, 40, 45, 60, 90];
@@ -18,6 +20,9 @@ export const ServicesPage: React.FC = () => {
   const [modalError, setModalError] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [editingService, setEditingService] = useState<any | null>(null);
+  const [serviceToDelete, setServiceToDelete] = useState<any | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [form, setForm] = useState({ name: "", category: "Cabelo", price: "40.00", duration: "30", buffer: "0" });
 
   const openCreate = () => {
@@ -40,6 +45,70 @@ export const ServicesPage: React.FC = () => {
     setError(null);
     setModalError(null);
     setIsModalOpen(true);
+  };
+
+  const openDeleteService = (service: any) => {
+    setServiceToDelete(service);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDeleteService = async (reason: string) => {
+    if (!serviceToDelete || !tenant?.id) return;
+    setDeleteLoading(true);
+    setError(null);
+
+    try {
+      // 1. Tenta RPC delete_service_with_audit
+      const { error: rpcErr } = await (supabase.rpc as any)("delete_service_with_audit", {
+        p_service_id: serviceToDelete.id,
+        p_reason: reason || "Exclusão manual no catálogo de serviços",
+      });
+
+      if (rpcErr) {
+        console.warn("RPC delete_service_with_audit fallback:", rpcErr.message);
+        // Fallback: soft-delete direto
+        await (supabase.from("services") as any)
+          .update({
+            is_active: false,
+            deleted_at: new Date().toISOString(),
+            deletion_reason: reason || "Exclusão manual no catálogo de serviços",
+          })
+          .eq("id", serviceToDelete.id)
+          .eq("tenant_id", tenant.id);
+      }
+
+      // 2. Registrar no log de auditoria
+      await recordAuditLog({
+        tenantId: tenant.id,
+        action: "soft_delete",
+        entityType: "service",
+        entityId: serviceToDelete.id,
+        previousData: serviceToDelete,
+        reason: reason || "Exclusão de serviço do catálogo",
+      });
+
+      // 3. Atualizar estado local
+      setServices((prev) => prev.filter((s) => s.id !== serviceToDelete.id));
+
+      try {
+        const cacheKey = `mb_services_${tenant.id}`;
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) {
+          const list = JSON.parse(raw);
+          localStorage.setItem(cacheKey, JSON.stringify(list.filter((s: any) => s.id !== serviceToDelete.id)));
+        }
+      } catch {}
+
+      setIsDeleteModalOpen(false);
+      setServiceToDelete(null);
+      setSuccessToast("Serviço excluído com sucesso. Histórico de auditoria registrado.");
+      setTimeout(() => setSuccessToast(null), 3500);
+    } catch (err: any) {
+      console.warn("Erro ao excluir serviço:", err);
+      setError("Erro ao excluir serviço: " + (err?.message || "Tente novamente."));
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const saveService = async (event: React.FormEvent) => {
@@ -345,6 +414,14 @@ export const ServicesPage: React.FC = () => {
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
+
+                  <button
+                    onClick={() => openDeleteService(srv)}
+                    className="p-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 transition"
+                    title="Excluir serviço do catálogo"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>
@@ -530,6 +607,25 @@ export const ServicesPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de confirmação de exclusão auditada de serviço */}
+      <DeleteConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setServiceToDelete(null);
+        }}
+        onConfirm={confirmDeleteService}
+        title="Excluir Serviço do Catálogo"
+        itemDescription={
+          serviceToDelete
+            ? `${serviceToDelete.name} - Valor: ${formatCurrency(serviceToDelete.price_cents)} (${serviceToDelete.duration_minutes} min)`
+            : ""
+        }
+        warningMessage="Esta exclusão registrará um evento na trilha de auditoria e manterá intactos os agendamentos anteriores e os dados financeiros históricos já computados para este serviço."
+        requireReason={false}
+        loading={deleteLoading}
+      />
     </div>
   );
 };

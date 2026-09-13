@@ -275,54 +275,8 @@ export interface Database {
           cancellation_reason: string | null;
           canceled_by: string | null;
           notes: string | null;
-          manual_adjustment_cents?: number | null;
-          adjustment_notes?: string | null;
           created_at: string;
           updated_at: string;
-        };
-      };
-      appointment_items: {
-        Row: {
-          id: string;
-          tenant_id: string;
-          appointment_id: string;
-          item_type: "product" | "service";
-          product_id: string | null;
-          service_id: string | null;
-          description: string;
-          quantity: number;
-          unit_price_cents: number;
-          total_cents: number;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          tenant_id: string;
-          appointment_id: string;
-          item_type?: "product" | "service";
-          product_id?: string | null;
-          service_id?: string | null;
-          description: string;
-          quantity?: number;
-          unit_price_cents?: number;
-          total_cents?: number;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          tenant_id?: string;
-          appointment_id?: string;
-          item_type?: "product" | "service";
-          product_id?: string | null;
-          service_id?: string | null;
-          description?: string;
-          quantity?: number;
-          unit_price_cents?: number;
-          total_cents?: number;
-          created_at?: string;
-          updated_at?: string;
         };
       };
       financial_transactions: {
@@ -355,44 +309,8 @@ export interface Database {
           current_stock: number;
           min_stock_alert: number;
           is_active: boolean;
-          image_url?: string | null;
-          images?: string[] | null;
           created_at: string;
           updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          tenant_id: string;
-          name: string;
-          sku?: string | null;
-          barcode?: string | null;
-          category?: string;
-          cost_price_cents?: number;
-          sale_price_cents?: number;
-          current_stock?: number;
-          min_stock_alert?: number;
-          is_active?: boolean;
-          image_url?: string | null;
-          images?: string[] | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          tenant_id?: string;
-          name?: string;
-          sku?: string | null;
-          barcode?: string | null;
-          category?: string;
-          cost_price_cents?: number;
-          sale_price_cents?: number;
-          current_stock?: number;
-          min_stock_alert?: number;
-          is_active?: boolean;
-          image_url?: string | null;
-          images?: string[] | null;
-          created_at?: string;
-          updated_at?: string;
         };
       };
       stock_movements: {

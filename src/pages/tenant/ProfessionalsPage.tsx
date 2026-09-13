@@ -28,6 +28,8 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatCurrency } from "@/lib/utils";
 import { compressImageFile } from "@/lib/imageUtils";
+import { DeleteConfirmModal } from "@/components/common/DeleteConfirmModal";
+import { recordAuditLog } from "@/lib/audit";
 
 const PALETTE_COLORS = [
   "#F28322", // Laranja MetricBarber
@@ -96,6 +98,9 @@ export const ProfessionalsPage: React.FC = () => {
   const [sendingInviteId, setSendingInviteId] = useState<string | null>(null);
 
   const [editingProfessional, setEditingProfessional] = useState<any | null>(null);
+  const [professionalToDelete, setProfessionalToDelete] = useState<any | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [form, setForm] = useState({
     name: "",
     nickname: "",
@@ -497,6 +502,74 @@ export const ProfessionalsPage: React.FC = () => {
     });
   };
 
+  const openDeleteProfessional = (pro: any) => {
+    setProfessionalToDelete(pro);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDeleteProfessional = async (reason: string) => {
+    if (!professionalToDelete || !tenant?.id) return;
+    setDeleteLoading(true);
+    setError(null);
+
+    try {
+      // 1. Tenta RPC delete_professional_with_audit
+      const { error: rpcErr } = await (supabase.rpc as any)("delete_professional_with_audit", {
+        p_professional_id: professionalToDelete.id,
+        p_reason: reason || "Exclusão de profissional da equipe",
+      });
+
+      if (rpcErr) {
+        console.warn("RPC delete_professional_with_audit fallback:", rpcErr.message);
+        // Fallback: soft-delete direto desativando e liberando vaga
+        await (supabase.from("professionals") as any)
+          .update({
+            is_active: false,
+            deleted_at: new Date().toISOString(),
+            deletion_reason: reason || "Exclusão de profissional da equipe",
+          })
+          .eq("id", professionalToDelete.id)
+          .eq("tenant_id", tenant.id);
+      }
+
+      // 2. Registrar no log de auditoria
+      await recordAuditLog({
+        tenantId: tenant.id,
+        action: "soft_delete",
+        entityType: "professional",
+        entityId: professionalToDelete.id,
+        previousData: professionalToDelete,
+        reason: reason || "Exclusão de profissional da equipe",
+      });
+
+      // 3. Atualizar estado local
+      setProfessionals((prev) => prev.filter((p) => p.id !== professionalToDelete.id));
+
+      try {
+        const cacheKey = `mb_professionals_${tenant.id}`;
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) {
+          const list = JSON.parse(raw);
+          const filtered = list.filter((p: any) => p.id !== professionalToDelete.id);
+          localStorage.setItem(cacheKey, JSON.stringify(filtered));
+        }
+        if (tenant.slug) {
+          localStorage.setItem(`mb_professionals_${tenant.slug}`, JSON.stringify(professionals.filter((p) => p.id !== professionalToDelete.id)));
+        }
+      } catch {}
+
+      setIsDeleteModalOpen(false);
+      setProfessionalToDelete(null);
+      setSuccessToast("Profissional removido com sucesso. A vaga no plano foi liberada e a auditoria registrada.");
+      setTimeout(() => setSuccessToast(null), 4000);
+    } catch (err: any) {
+      console.warn("Erro ao excluir profissional:", err);
+      setError("Erro ao excluir profissional: " + (err?.message || "Tente novamente."));
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!tenant?.id) return;
 
@@ -750,6 +823,14 @@ export const ProfessionalsPage: React.FC = () => {
                   >
                     <Edit2 className="w-3.5 h-3.5" />
                     <span>Editar</span>
+                  </button>
+
+                  <button
+                    onClick={() => openDeleteProfessional(pro)}
+                    className="p-1.5 rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 text-xs font-bold transition flex items-center shadow-sm"
+                    title="Excluir profissional da equipe (Auditado)"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
@@ -1359,6 +1440,25 @@ export const ProfessionalsPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de confirmação de exclusão auditada de profissional */}
+      <DeleteConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setProfessionalToDelete(null);
+        }}
+        onConfirm={confirmDeleteProfessional}
+        title="Excluir Profissional da Equipe"
+        itemDescription={
+          professionalToDelete
+            ? `${professionalToDelete.name} (${professionalToDelete.nickname || "Sem apelido"}) • Comissão padrão: ${professionalToDelete.commission_rate ?? 50}%`
+            : ""
+        }
+        warningMessage="Esta exclusão liberará a vaga correspondente no plano de assinatura da barbearia. Por segurança anti-fraude, o histórico de atendimentos passados, relatórios e comissões já pagas deste profissional permanecerão registrados na trilha de auditoria."
+        requireReason={false}
+        loading={deleteLoading}
+      />
     </div>
   );
 };

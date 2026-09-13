@@ -87,6 +87,7 @@ function App() {
           <Route path="/estoque" element={<ProtectedRoute allowedRoles={["owner", "admin", "receptionist"]}><StockPage /></ProtectedRoute>} />
           <Route path="/relatorios" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><ReportsPage /></ProtectedRoute>} />
           <Route path="/assinatura" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><SubscriptionPage /></ProtectedRoute>} />
+          <Route path="/auditoria" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><AuditPage /></ProtectedRoute>} />
           <Route path="/configuracoes" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><SettingsPage /></ProtectedRoute>} />
           <Route path="/configuracoes/assinatura" element={<Navigate to="/assinatura" replace />} />
         </Route>

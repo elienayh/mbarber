@@ -26,6 +26,8 @@ import { formatCurrency, formatPhone } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { broadcastNewAppointment } from "@/lib/notifications";
+import { DeleteConfirmModal } from "@/components/common/DeleteConfirmModal";
+import { recordAuditLog } from "@/lib/audit";
 
 interface Appointment {
   id: string;
@@ -114,6 +116,8 @@ export const AgendaPage: React.FC = () => {
   const [isRecurrent, setIsRecurrent] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);
+  const [isDeleteApptModalOpen, setIsDeleteApptModalOpen] = useState(false);
+  const [deleteApptLoading, setDeleteApptLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [savingAppointment, setSavingAppointment] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -921,6 +925,88 @@ export const AgendaPage: React.FC = () => {
         : "Atendimento cancelado."
     );
     setTimeout(() => setSuccessToast(null), 3500);
+  };
+
+  const handleConfirmDeleteAppointment = async (reason: string) => {
+    if (!selectedAppointment || !tenant?.id) return;
+    setDeleteApptLoading(true);
+    setError(null);
+
+    try {
+      // 1. Tentar RPC no banco com salvaguarda financeira
+      const { error: rpcErr } = await (supabase.rpc as any)("delete_appointment_with_audit", {
+        p_appointment_id: selectedAppointment.id,
+        p_reason: reason || "Cancelamento/exclusão pelo painel de agendamentos",
+      });
+
+      if (rpcErr) {
+        console.warn("RPC delete_appointment_with_audit falhou, executando fallback com anotação financeira:", rpcErr.message);
+        // Fallback: Soft delete no agendamento
+        await (supabase.from("appointments") as any)
+          .update({
+            status: "canceled",
+            deleted_at: new Date().toISOString(),
+            deletion_reason: reason || "Exclusão manual na agenda",
+            cancellation_reason: reason || "Exclusão manual na agenda",
+            canceled_by: "backoffice",
+          })
+          .eq("id", selectedAppointment.id);
+
+        // Fallback Anti-fraude: Não apaga a transação financeira! Apenas anota no campo notes
+        try {
+          const { data: txs } = await (supabase.from("financial_transactions") as any)
+            .select("id, notes")
+            .eq("appointment_id", selectedAppointment.id);
+
+          if (txs && txs.length > 0) {
+            for (const tx of txs) {
+              const prevNotes = tx.notes || "";
+              if (!prevNotes.includes("[ATENDIMENTO EXCLUÍDO DA AGENDA]")) {
+                await (supabase.from("financial_transactions") as any)
+                  .update({
+                    notes: `${prevNotes} [ATENDIMENTO EXCLUÍDO DA AGENDA - Motivo: ${reason || "Não informado"}]`.trim(),
+                  })
+                  .eq("id", tx.id);
+              }
+            }
+          }
+        } catch (fErr) {
+          console.warn("Financial annotation warning:", fErr);
+        }
+      }
+
+      // 2. Registrar evento no log de auditoria
+      await recordAuditLog({
+        tenantId: tenant.id,
+        action: "soft_delete",
+        entityType: "appointment",
+        entityId: selectedAppointment.id,
+        previousData: selectedAppointment,
+        reason: reason || "Exclusão de agendamento na agenda",
+      });
+
+      // 3. Remover visualmente da lista de agendamentos e do cache
+      setAppointments((current) => current.filter((item) => item.id !== selectedAppointment.id));
+      try {
+        const aptKey = `mb_appointments_${tenant.id}_${selectedDate}`;
+        const rawApts = localStorage.getItem(aptKey);
+        if (rawApts) {
+          const apts = JSON.parse(rawApts);
+          const filtered = apts.filter((a: any) => a.id !== selectedAppointment.id);
+          localStorage.setItem(aptKey, JSON.stringify(filtered));
+        }
+      } catch {}
+
+      setIsDeleteApptModalOpen(false);
+      setIsActionModalOpen(false);
+      setSelectedAppointment(null);
+      setSuccessToast("Agendamento excluído da agenda com sucesso. Registros contábeis preservados.");
+    } catch (err: any) {
+      console.warn("Erro ao excluir agendamento:", err);
+      setError("Erro ao excluir o agendamento: " + (err?.message || "Tente novamente."));
+    } finally {
+      setDeleteApptLoading(false);
+    }
   };
 
   const timeSlots = [
@@ -2067,10 +2153,20 @@ export const AgendaPage: React.FC = () => {
                     onClick={() => updateAppointmentStatus("canceled")}
                     className="w-full min-h-11 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs transition disabled:opacity-50 flex items-center justify-center gap-1.5"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <X className="w-3.5 h-3.5" />
                     <span>Cancelar Atendimento</span>
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={() => setIsDeleteApptModalOpen(true)}
+                  className="w-full min-h-11 rounded-xl border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs transition disabled:opacity-50 flex items-center justify-center gap-1.5 col-span-1 sm:col-span-2"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir Agendamento da Agenda (Auditado & Anti-Fraude)</span>
+                </button>
               </div>
             </div>
           </div>
@@ -2292,6 +2388,22 @@ export const AgendaPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de confirmação de exclusão auditada de agendamento */}
+      <DeleteConfirmModal
+        isOpen={isDeleteApptModalOpen}
+        onClose={() => setIsDeleteApptModalOpen(false)}
+        onConfirm={handleConfirmDeleteAppointment}
+        title="Excluir Agendamento da Agenda"
+        itemDescription={
+          selectedAppointment
+            ? `Cliente: ${selectedAppointment.customerName} • Serviço: ${selectedAppointment.serviceName} • Horário: ${selectedAppointment.startTime}`
+            : ""
+        }
+        warningMessage="Esta exclusão removerá o atendimento da grade da agenda e será registrada no log de auditoria. Para proteção contábil e anti-fraude, se houver recebimento ou registro financeiro gerado, ele será preservado com anotação de cancelamento da agenda."
+        requireReason={false}
+        loading={deleteApptLoading}
+      />
     </div>
   );
 };

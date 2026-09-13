@@ -18,6 +18,7 @@ import {
   X,
   Sparkles,
   CreditCard,
+  ShieldAlert,
 } from "lucide-react";
 import { LogoIcon } from "@/components/common/Logo";
 
@@ -41,9 +42,10 @@ export const TenantLayout: React.FC = () => {
     { label: "Serviços", href: "/servicos", icon: Scissors },
     { label: "Profissionais", href: "/profissionais", icon: UserCheck },
     { label: "Financeiro", href: "/financeiro", icon: DollarSign },
-    { label: "Estoque", href: "/estoque", icon: Package },
+    { label: "Produtos", href: "/estoque", icon: Package },
     { label: "Relatórios", href: "/relatorios", icon: BarChart3 },
     { label: "Assinatura", href: "/assinatura", icon: CreditCard },
+    { label: "Auditoria", href: "/auditoria", icon: ShieldAlert },
     { label: "Configurações", href: "/configuracoes", icon: Settings },
   ];
   const visibleNavItems = tenantRole === "professional"

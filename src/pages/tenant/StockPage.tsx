@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { Package, AlertTriangle, Plus, X, Upload, Loader2, Image as ImageIcon } from "lucide-react";
+import { Package, AlertTriangle, Plus, X, Upload, Loader2, Image as ImageIcon, Edit2, Trash2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { compressImageFile } from "@/lib/imageUtils";
+import { DeleteConfirmModal } from "@/components/common/DeleteConfirmModal";
+import { recordAuditLog } from "@/lib/audit";
 
 export const StockPage: React.FC = () => {
   const { tenant } = useAuth();
@@ -15,15 +17,98 @@ export const StockPage: React.FC = () => {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isMovementModalOpen, setIsMovementModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [productToDelete, setProductToDelete] = useState<any | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [productForm, setProductForm] = useState({ name: "", sku: "", category: "Geral", cost: "0", sale: "0", stock: "0", minimum: "3" });
   const [productImages, setProductImages] = useState<string[]>([]);
   const [movementForm, setMovementForm] = useState({ type: "in_purchase", quantity: "1" });
 
   const openProductForm = () => {
+    setEditingProduct(null);
     setProductForm({ name: "", sku: "", category: "Geral", cost: "0", sale: "0", stock: "0", minimum: "3" });
     setProductImages([]);
     setError(null);
     setIsProductModalOpen(true);
+  };
+
+  const openEditProduct = (product: any) => {
+    setEditingProduct(product);
+    setProductForm({
+      name: product.name || "",
+      sku: product.sku || "",
+      category: product.category || "Geral",
+      cost: ((product.cost_price_cents || 0) / 100).toFixed(2),
+      sale: ((product.sale_price_cents || 0) / 100).toFixed(2),
+      stock: String(product.current_stock ?? 0),
+      minimum: String(product.min_stock_alert ?? 3),
+    });
+    const imgs = Array.isArray(product.images) && product.images.length > 0
+      ? product.images
+      : product.image_url
+      ? [product.image_url]
+      : [];
+    setProductImages(imgs);
+    setError(null);
+    setIsProductModalOpen(true);
+  };
+
+  const openDeleteProduct = (product: any) => {
+    setProductToDelete(product);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDeleteProduct = async (reason: string) => {
+    if (!productToDelete || !tenant?.id) return;
+    setDeleteLoading(true);
+
+    try {
+      // 1. Tentar RPC no Supabase com auditoria
+      const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)("delete_product_with_audit", {
+        p_product_id: productToDelete.id,
+        p_reason: reason || null,
+      });
+
+      if (rpcErr) {
+        console.warn("RPC delete_product_with_audit falhou, usando soft delete direto:", rpcErr.message);
+        // Fallback: Soft delete direto na tabela
+        await (supabase.from("products") as any)
+          .update({
+            is_active: false,
+            deleted_at: new Date().toISOString(),
+            deletion_reason: reason || null,
+          })
+          .eq("id", productToDelete.id);
+      }
+
+      // 2. Registrar evento no log de auditoria
+      await recordAuditLog({
+        tenantId: tenant.id,
+        action: "soft_delete",
+        entityType: "product",
+        entityId: productToDelete.id,
+        previousData: productToDelete,
+        reason: reason || "Exclusão manual no catálogo de produtos",
+      });
+
+      // 3. Atualizar estado local e cache
+      setProducts((current) => {
+        const next = current.filter((p) => p.id !== productToDelete.id);
+        try {
+          localStorage.setItem(`mb_products_${tenant.id}`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      setIsDeleteModalOpen(false);
+      setProductToDelete(null);
+    } catch (err: any) {
+      console.warn("Erro ao excluir produto:", err);
+      setError("Erro ao excluir o produto: " + (err?.message || "Tente novamente."));
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const handleImageFilesSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,6 +190,82 @@ export const StockPage: React.FC = () => {
     const generatedSku = productForm.sku.trim() || `SKU-${Date.now().toString().slice(-4)}`;
     const mainImageUrl = productImages[0] || null;
 
+    // --- FLUXO DE EDIÇÃO (UPDATE) ---
+    if (editingProduct) {
+      const updatedProduct = {
+        ...editingProduct,
+        name: productForm.name.trim(),
+        sku: generatedSku,
+        category: productForm.category.trim() || "Geral",
+        cost_price_cents: Math.round(cost * 100),
+        sale_price_cents: Math.round(sale * 100),
+        current_stock: stock,
+        min_stock_alert: minimum,
+        image_url: mainImageUrl,
+        images: productImages,
+      };
+
+      try {
+        const updatePayload: any = {
+          name: updatedProduct.name,
+          sku: updatedProduct.sku,
+          category: updatedProduct.category,
+          cost_price_cents: updatedProduct.cost_price_cents,
+          sale_price_cents: updatedProduct.sale_price_cents,
+          current_stock: updatedProduct.current_stock,
+          min_stock_alert: updatedProduct.min_stock_alert,
+          image_url: mainImageUrl,
+          images: productImages,
+        };
+
+        const { error: updateErr } = await (supabase.from("products") as any)
+          .update(updatePayload)
+          .eq("id", editingProduct.id);
+
+        if (updateErr) {
+          console.warn("Supabase update error, falling back without image fields:", updateErr.message);
+          delete updatePayload.image_url;
+          delete updatePayload.images;
+          await (supabase.from("products") as any)
+            .update(updatePayload)
+            .eq("id", editingProduct.id);
+        }
+      } catch (err) {
+        console.warn("Error updating product on Supabase:", err);
+      }
+
+      // Se houve alteração em preço ou estoque, registrar na trilha de auditoria
+      const priceChanged = editingProduct.sale_price_cents !== updatedProduct.sale_price_cents ||
+                           editingProduct.cost_price_cents !== updatedProduct.cost_price_cents;
+      const stockChanged = editingProduct.current_stock !== updatedProduct.current_stock;
+
+      if (priceChanged || stockChanged) {
+        await recordAuditLog({
+          tenantId: tenant.id,
+          action: "update",
+          entityType: "product",
+          entityId: editingProduct.id,
+          previousData: editingProduct,
+          newData: updatedProduct,
+          reason: `Alteração de produto: ${priceChanged ? "Preços alterados. " : ""}${stockChanged ? `Estoque alterado para ${stock} un.` : ""}`,
+        });
+      }
+
+      setProducts((current) => {
+        const next = current.map((p) => (p.id === editingProduct.id ? updatedProduct : p));
+        try {
+          localStorage.setItem(`mb_products_${tenant.id}`, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+
+      setSaving(false);
+      setIsProductModalOpen(false);
+      setEditingProduct(null);
+      return;
+    }
+
+    // --- FLUXO DE CADASTRO (INSERT) ---
     let createdProduct: any = null;
     try {
       const payload: any = {
@@ -268,9 +429,14 @@ export const StockPage: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 surface-card-light p-6 rounded-2xl border border-slate-200 shadow-sm">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900">Estoque & Produtos</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900">Produtos & Estoque</h2>
+            <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-md bg-slate-100 text-slate-700">
+              Catálogo
+            </span>
+          </div>
           <p className="text-sm text-slate-500 mt-0.5">
-            Controle de mercadorias para revenda no balcão e insumos de uso interno
+            Controle de mercadorias para revenda no balcão, agendamentos e insumos da barbearia
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -285,7 +451,7 @@ export const StockPage: React.FC = () => {
       {/* Stock Table */}
       <div className="surface-card-light rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="md:hidden divide-y divide-slate-100">
-          {loading && <div className="px-4 py-10 text-center text-sm text-slate-500">Carregando estoque...</div>}
+          {loading && <div className="px-4 py-10 text-center text-sm text-slate-500">Carregando catálogo de produtos...</div>}
           {!loading && products.length === 0 && <div className="px-4 py-10 text-center text-sm text-slate-500">Nenhum produto cadastrado.</div>}
           {!loading && products.map((product) => {
             const isLowStock = product.current_stock <= product.min_stock_alert;
@@ -307,21 +473,42 @@ export const StockPage: React.FC = () => {
                     )}
                     <div>
                       <h3 className="font-bold text-slate-900">{product.name}</h3>
-                      <p className="mt-0.5 text-xs text-slate-500">{product.category || "Geral"}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {product.category || "Geral"} {product.sku ? `• ${product.sku}` : ""}
+                      </p>
                     </div>
                   </div>
                   <span className="text-right font-black text-slate-900">
                     {product.sale_price_cents > 0 ? formatCurrency(product.sale_price_cents) : "Uso interno"}
                   </span>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${isLowStock ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
-                    {isLowStock && <AlertTriangle className="w-3.5 h-3.5" />}
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${isLowStock ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                    {isLowStock && <AlertTriangle className="w-3 h-3" />}
                     {product.current_stock} un {isLowStock ? "· estoque baixo" : "disponíveis"}
                   </span>
-                  <button onClick={() => openMovementForm(product)} className="min-h-11 rounded-xl surface-elevated-light px-3 text-xs font-semibold text-slate-800 transition hover:bg-slate-200">
-                    Entrada / Saída
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => openMovementForm(product)}
+                      className="h-9 rounded-xl surface-elevated-light px-2.5 text-xs font-semibold text-slate-800 transition hover:bg-slate-200"
+                    >
+                      Estoque
+                    </button>
+                    <button
+                      onClick={() => openEditProduct(product)}
+                      className="h-9 w-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition flex items-center justify-center"
+                      title="Editar produto"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => openDeleteProduct(product)}
+                      className="h-9 w-9 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 transition flex items-center justify-center"
+                      title="Excluir produto"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </article>
             );
@@ -337,11 +524,11 @@ export const StockPage: React.FC = () => {
                 <th className="py-3.5 px-4">Preço de Custo</th>
                 <th className="py-3.5 px-4">Preço de Venda</th>
                 <th className="py-3.5 px-4">Estoque Atual</th>
-                <th className="py-3.5 px-4 text-right">Ação</th>
+                <th className="py-3.5 px-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {loading && <tr><td colSpan={6} className="py-8 text-center text-slate-500">Carregando estoque...</td></tr>}
+              {loading && <tr><td colSpan={6} className="py-8 text-center text-slate-500">Carregando catálogo de produtos...</td></tr>}
               {!loading && products.map((p) => {
                 const isLowStock = p.current_stock <= p.min_stock_alert;
                 const displayImage = p.image_url || (Array.isArray(p.images) && p.images[0]) || null;
@@ -362,10 +549,13 @@ export const StockPage: React.FC = () => {
                         )}
                         <div>
                           <div className="font-bold text-slate-900">{p.name}</div>
+                          <div className="text-[11px] text-slate-400 font-mono">
+                            {p.sku || "Sem SKU"}
+                          </div>
                           {isLowStock && (
                             <div className="text-[11px] text-red-600 font-semibold flex items-center gap-1 mt-0.5">
-                              <AlertTriangle className="w-3.5 h-3.5" />
-                              Estoque abaixo do mínimo ({p.min_stock_alert} un)
+                              <AlertTriangle className="w-3 h-3" />
+                              Abaixo do mínimo ({p.min_stock_alert} un)
                             </div>
                           )}
                         </div>
@@ -389,10 +579,29 @@ export const StockPage: React.FC = () => {
                         {p.current_stock} un
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-right space-x-1">
-                      <button onClick={() => openMovementForm(p)} className="px-2.5 py-1 text-xs font-semibold rounded-lg surface-elevated-light hover:bg-slate-200 text-slate-800 transition">
-                        Entrada / Saída
-                      </button>
+                    <td className="py-3.5 px-4 text-right">
+                      <div className="inline-flex items-center gap-1.5 justify-end">
+                        <button
+                          onClick={() => openMovementForm(p)}
+                          className="px-2.5 py-1.5 text-xs font-semibold rounded-lg surface-elevated-light hover:bg-slate-200 text-slate-800 transition"
+                        >
+                          Entrada / Saída
+                        </button>
+                        <button
+                          onClick={() => openEditProduct(p)}
+                          className="p-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition"
+                          title="Editar produto"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => openDeleteProduct(p)}
+                          className="p-1.5 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition"
+                          title="Excluir produto"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -407,10 +616,23 @@ export const StockPage: React.FC = () => {
           <div className="bg-white text-slate-900 w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-slate-200 my-8">
             <div className="flex items-center justify-between border-b border-slate-200 pb-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Novo Produto</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Cadastre itens para venda no balcão ou agendamento</p>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {editingProduct ? "Editar Produto" : "Novo Produto"}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {editingProduct
+                    ? "Atualize as informações, fotos, preços e estoque do item"
+                    : "Cadastre itens para venda no balcão ou agendamento"}
+                </p>
               </div>
-              <button type="button" onClick={() => setIsProductModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsProductModalOpen(false);
+                  setEditingProduct(null);
+                }}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -555,7 +777,11 @@ export const StockPage: React.FC = () => {
                 className="w-full rounded-xl bg-accent py-3 font-bold text-slate-950 hover:bg-accent/90 disabled:opacity-50 transition shadow-md shadow-accent flex items-center justify-center gap-2"
               >
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {saving ? "Salvando Produto..." : "Cadastrar Produto"}
+                {saving
+                  ? "Salvando Produto..."
+                  : editingProduct
+                  ? "Salvar Alterações"
+                  : "Cadastrar Produto"}
               </button>
             </form>
           </div>
@@ -599,6 +825,25 @@ export const StockPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de confirmação de exclusão auditada com anti-fraude */}
+      <DeleteConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+          setIsDeleteModalOpen(false);
+          setProductToDelete(null);
+        }}
+        onConfirm={confirmDeleteProduct}
+        title="Excluir Produto"
+        itemDescription={
+          productToDelete
+            ? `${productToDelete.name} (${productToDelete.sku || "Sem SKU"}) - Estoque atual: ${productToDelete.current_stock ?? 0} un.`
+            : ""
+        }
+        warningMessage="Esta exclusão será registrada permanentemente na trilha de auditoria e anti-fraude da barbearia. O histórico de movimentações e vendas passadas permanecerá intacto para fins fiscais e financeiros."
+        requireReason={false}
+        loading={deleteLoading}
+      />
     </div>
   );
 };

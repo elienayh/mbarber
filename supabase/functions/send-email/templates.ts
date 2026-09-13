@@ -212,26 +212,7 @@ export function renderAppointmentEmail(
 <body>
   <div class="container">
     <div class="header">
-      <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto 8px auto;">
-        <tr>
-          <td style="vertical-align: middle; padding-right: 10px;">
-            <!-- Logo Oficial MBarber -->
-            <svg width="36" height="36" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; border-radius: 8px;">
-              <rect width="512" height="512" rx="110" ry="110" fill="#F86D00" />
-              <polygon points="446,152 446,386 382,386 382,204 320,292 175,152" fill="#FAB487" />
-              <polygon points="175,152 320,292 320,366 175,236" fill="#FAB487" />
-              <path d="M 175,236 L 319,366 C 321,373 315,385 304,385 L 295,385 C 280,385 175,282 175,236 Z" fill="#FFFFFF" />
-              <path d="M 132,126 C 154,126 168,142 163,164 L 123,354 C 119,374 100,386 82,382 C 66,378 57,361 61,343 L 103,148 C 107,134 118,126 132,126 Z" fill="#FAB487" />
-              <path d="M 152,170 L 118,345 C 115,358 106,366 94,367 C 106,370 119,363 123,348 L 157,178 C 158,172 156,168 152,170 Z" fill="#E68243" />
-              <circle cx="132" cy="154" r="14.5" fill="#F86D00" />
-              <circle cx="92" cy="354" r="11.5" fill="#F86D00" />
-            </svg>
-          </td>
-          <td style="vertical-align: middle;">
-            <div class="brand" style="margin: 0; line-height: 1;">M<span class="brand-accent">Barber</span></div>
-          </td>
-        </tr>
-      </table>
+      <div class="brand">M<span class="brand-accent">Barber</span></div>
       <div style="font-size: 12px; color: #a8a29e; font-weight: 600;">${tenant}</div>
     </div>
     <div class="content">
