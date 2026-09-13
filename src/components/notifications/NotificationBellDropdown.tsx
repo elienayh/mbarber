@@ -17,6 +17,7 @@ import {
   Play,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { LogoIcon } from "@/components/common/Logo";
 
 export const NotificationBellDropdown: React.FC = () => {
   const {
@@ -98,7 +99,7 @@ export const NotificationBellDropdown: React.FC = () => {
           {/* Cabeçalho */}
           <div className="p-3.5 bg-slate-900 text-white flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Scissors className="w-4 h-4 text-accent" />
+              <LogoIcon size="xs" className="w-4 h-4 rounded-md shadow-none" />
               <span className="font-bold text-sm">Notificações da Barbearia</span>
               {unreadCount > 0 && (
                 <span className="px-1.5 py-0.5 rounded-full bg-accent text-slate-950 font-black text-[10px]">

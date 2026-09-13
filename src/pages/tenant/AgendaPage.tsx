@@ -12,6 +12,15 @@ import {
   Lock,
   Coffee,
   Trash2,
+  Package,
+  ShoppingBag,
+  ArrowRightLeft,
+  Tag,
+  Check,
+  AlertCircle,
+  Phone,
+  Loader2,
+  Percent,
 } from "lucide-react";
 import { formatCurrency, formatPhone } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
@@ -21,14 +30,19 @@ import { broadcastNewAppointment } from "@/lib/notifications";
 interface Appointment {
   id: string;
   barberId: string;
+  serviceId?: string;
   customerName: string;
   customerPhone: string;
   serviceName: string;
   time: string;
   durationMinutes: number;
   priceCents: number;
+  basePriceCents?: number;
+  manualAdjustmentCents?: number;
+  adjustmentNotes?: string;
   status: "scheduled" | "confirmed" | "in_progress" | "completed" | "canceled";
   isRecurrent?: boolean;
+  items?: any[];
 }
 
 interface WorkSchedule {
@@ -105,6 +119,26 @@ export const AgendaPage: React.FC = () => {
   const [modalError, setModalError] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
+  // Estados do Card Expandido (Itens extras, troca de produto e ajuste manual)
+  const [appointmentItems, setAppointmentItems] = useState<any[]>([]);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [productsList, setProductsList] = useState<any[]>([]);
+
+  const [isAddingExtraService, setIsAddingExtraService] = useState(false);
+  const [selectedExtraServiceId, setSelectedExtraServiceId] = useState("");
+
+  const [isAddingExtraProduct, setIsAddingExtraProduct] = useState(false);
+  const [selectedExtraProductId, setSelectedExtraProductId] = useState("");
+  const [selectedExtraProductQty, setSelectedExtraProductQty] = useState(1);
+
+  const [swappingItemId, setSwappingItemId] = useState<string | null>(null);
+  const [replacementProductId, setReplacementProductId] = useState("");
+
+  const [adjustmentType, setAdjustmentType] = useState<"none" | "discount" | "surcharge">("none");
+  const [adjustmentAmount, setAdjustmentAmount] = useState<string>("");
+  const [adjustmentNotes, setAdjustmentNotes] = useState<string>("");
+  const [savingEdits, setSavingEdits] = useState(false);
+
   const dateLabel = useMemo(() => {
     return new Date(`${selectedDate}T12:00:00`).toLocaleDateString("pt-BR", {
       weekday: "long",
@@ -122,7 +156,13 @@ export const AgendaPage: React.FC = () => {
       const start = `${selectedDate}T00:00:00`;
       const end = `${selectedDate}T23:59:59`;
 
-      const [{ data: professionalsData }, { data: servicesData }, { data: appointmentsData }, { data: blocksData }] = await Promise.all([
+      const [
+        { data: professionalsData },
+        { data: servicesData },
+        { data: appointmentsData },
+        { data: blocksData },
+        { data: productsData }
+      ] = await Promise.all([
         (supabase.from("professionals") as any)
           .select("id, name, nickname, color_hex, avatar_url")
           .eq("tenant_id", tenant.id)
@@ -134,7 +174,7 @@ export const AgendaPage: React.FC = () => {
           .eq("is_active", true)
           .order("name"),
         (supabase.from("appointments") as any)
-          .select("id, professional_id, start_time, duration_minutes, price_cents, status, customers(name, phone), services(name)")
+          .select("id, professional_id, service_id, start_time, duration_minutes, price_cents, manual_adjustment_cents, adjustment_notes, status, customers(name, phone), services(name, price_cents)")
           .eq("tenant_id", tenant.id)
           .gte("start_time", start)
           .lte("start_time", end)
@@ -145,6 +185,11 @@ export const AgendaPage: React.FC = () => {
           .eq("tenant_id", tenant.id)
           .gte("start_time", `${selectedDate}T00:00:00`)
           .lte("start_time", `${selectedDate}T23:59:59`),
+        (supabase.from("products") as any)
+          .select("id, name, sale_price_cents, current_stock, image_url, images")
+          .eq("tenant_id", tenant.id)
+          .eq("is_active", true)
+          .order("name"),
       ]);
 
       let loadedBarbers: Barber[] = (professionalsData || []).map((professional: any) => ({
@@ -196,23 +241,58 @@ export const AgendaPage: React.FC = () => {
       } catch {}
       const loadedServices = (servicesData || []) as ServiceOption[];
 
+      // Processa produtos disponíveis da barbearia
+      let loadedProducts: any[] = (productsData || []).map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        sale_price_cents: p.sale_price_cents,
+        current_stock: p.current_stock,
+        image_url: p.image_url,
+        images: p.images,
+      }));
+
+      try {
+        const cachedProductsRaw = localStorage.getItem(`mb_products_${tenant.id}`);
+        if (cachedProductsRaw) {
+          const cachedProducts = JSON.parse(cachedProductsRaw);
+          if (Array.isArray(cachedProducts)) {
+            const pMap = new Map<string, any>();
+            loadedProducts.forEach((p) => pMap.set(p.id, p));
+            cachedProducts.forEach((p) => {
+              if (p.is_active !== false && (!p.tenant_id || p.tenant_id === tenant.id)) {
+                pMap.set(p.id, p);
+              }
+            });
+            loadedProducts = Array.from(pMap.values());
+          }
+        }
+      } catch {}
+
       setBarbers(loadedBarbers);
       setServices(loadedServices);
+      setProductsList(loadedProducts);
       setSelectedBarberId((current) => current || loadedBarbers[0]?.id || "");
       setNewBarber((current) => current || loadedBarbers[0]?.id || "");
       setNewService((current) => current || loadedServices[0]?.id || "");
 
-      const remoteAppointments: Appointment[] = (appointmentsData || []).map((appointment: any) => ({
-        id: appointment.id,
-        barberId: appointment.professional_id,
-        customerName: appointment.customers?.name || "Cliente",
-        customerPhone: appointment.customers?.phone || "",
-        serviceName: appointment.services?.name || "Serviço",
-        time: new Date(appointment.start_time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-        durationMinutes: appointment.duration_minutes,
-        priceCents: appointment.price_cents,
-        status: appointment.status,
-      }));
+      const remoteAppointments: Appointment[] = (appointmentsData || []).map((appointment: any) => {
+        const basePrice = appointment.services?.price_cents || appointment.price_cents;
+        return {
+          id: appointment.id,
+          barberId: appointment.professional_id,
+          serviceId: appointment.service_id,
+          customerName: appointment.customers?.name || "Cliente",
+          customerPhone: appointment.customers?.phone || "",
+          serviceName: appointment.services?.name || "Serviço",
+          time: new Date(appointment.start_time).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+          durationMinutes: appointment.duration_minutes,
+          priceCents: appointment.price_cents,
+          basePriceCents: basePrice,
+          manualAdjustmentCents: appointment.manual_adjustment_cents || 0,
+          adjustmentNotes: appointment.adjustment_notes || "",
+          status: appointment.status,
+        };
+      });
 
       // Merge com agendamentos em cache local deste dia
       let localAppointments: Appointment[] = [];
@@ -426,27 +506,421 @@ export const AgendaPage: React.FC = () => {
     setTimeout(() => setSuccessToast(null), 4000);
   };
 
+  const openAppointmentDetails = async (appointment: Appointment) => {
+    setSelectedAppointment(appointment);
+    setAppointmentItems([]);
+    setLoadingItems(true);
+    setIsActionModalOpen(true);
+    setIsAddingExtraService(false);
+    setSelectedExtraServiceId("");
+    setIsAddingExtraProduct(false);
+    setSelectedExtraProductId("");
+    setSelectedExtraProductQty(1);
+    setSwappingItemId(null);
+    setReplacementProductId("");
+
+    // Inicializa campos de ajuste manual
+    const adj = appointment.manualAdjustmentCents || 0;
+    if (adj !== 0) {
+      if (adj < 0) {
+        setAdjustmentType("discount");
+        setAdjustmentAmount((Math.abs(adj) / 100).toFixed(2));
+      } else {
+        setAdjustmentType("surcharge");
+        setAdjustmentAmount((adj / 100).toFixed(2));
+      }
+    } else {
+      setAdjustmentType("none");
+      setAdjustmentAmount("");
+    }
+    setAdjustmentNotes(appointment.adjustmentNotes || "");
+
+    // Carrega do cache local primeiro para resposta visual instantânea
+    try {
+      const cached = localStorage.getItem(`mb_appointment_items_${appointment.id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setAppointmentItems(parsed);
+        }
+      }
+    } catch {}
+
+    // Busca itens no Supabase
+    try {
+      const { data, error } = await (supabase.from("appointment_items") as any)
+        .select("*")
+        .eq("appointment_id", appointment.id);
+
+      if (!error && Array.isArray(data)) {
+        const mapped = data.map((d: any) => ({
+          id: d.id,
+          tenantId: d.tenant_id,
+          appointmentId: d.appointment_id,
+          itemType: d.item_type,
+          item_type: d.item_type,
+          productId: d.product_id,
+          product_id: d.product_id,
+          serviceId: d.service_id,
+          service_id: d.service_id,
+          description: d.description,
+          quantity: d.quantity,
+          unitPriceCents: d.unit_price_cents,
+          unit_price_cents: d.unit_price_cents,
+          totalCents: d.total_cents,
+          total_cents: d.total_cents,
+        }));
+        setAppointmentItems(mapped);
+        try {
+          localStorage.setItem(`mb_appointment_items_${appointment.id}`, JSON.stringify(mapped));
+        } catch {}
+      }
+    } catch (err) {
+      console.warn("Erro ao buscar appointment_items:", err);
+    }
+    setLoadingItems(false);
+  };
+
+  const calculateTotals = (
+    apt: Appointment | null,
+    items: any[],
+    adjType: "none" | "discount" | "surcharge",
+    adjAmount: string
+  ) => {
+    if (!apt) return { baseCents: 0, itemsCents: 0, netAdjCents: 0, totalCents: 0 };
+    const baseCents = apt.basePriceCents ?? apt.priceCents;
+    const itemsCents = items.reduce((acc, it) => acc + (it.total_cents || it.totalCents || 0), 0);
+    const parsedAdj = parseFloat(adjAmount.replace(",", ".")) || 0;
+    const rawAdjCents = Math.round(parsedAdj * 100);
+    const netAdjCents = adjType === "discount" ? -rawAdjCents : adjType === "surcharge" ? rawAdjCents : 0;
+    const totalCents = Math.max(0, baseCents + itemsCents + netAdjCents);
+    return { baseCents, itemsCents, netAdjCents, totalCents };
+  };
+
+  const saveUpdatedAppointmentTotal = async (
+    currentItems: any[],
+    adjType: "none" | "discount" | "surcharge",
+    adjAmt: string,
+    adjNote: string
+  ) => {
+    if (!selectedAppointment || !tenant?.id) return;
+    const { baseCents, netAdjCents, totalCents } = calculateTotals(selectedAppointment, currentItems, adjType, adjAmt);
+
+    try {
+      await (supabase.from("appointments") as any)
+        .update({
+          price_cents: totalCents,
+          manual_adjustment_cents: netAdjCents,
+          adjustment_notes: adjNote.trim() || null,
+        })
+        .eq("id", selectedAppointment.id)
+        .eq("tenant_id", tenant.id);
+
+      if (selectedAppointment.status === "completed") {
+        await (supabase.from("financial_transactions") as any)
+          .update({ amount_cents: totalCents })
+          .eq("appointment_id", selectedAppointment.id);
+      }
+    } catch (e) {
+      console.warn("Erro ao atualizar total do atendimento:", e);
+    }
+
+    const updatedApt = {
+      ...selectedAppointment,
+      priceCents: totalCents,
+      basePriceCents: baseCents,
+      manualAdjustmentCents: netAdjCents,
+      adjustmentNotes: adjNote.trim(),
+      items: currentItems,
+    };
+    setSelectedAppointment(updatedApt);
+
+    setAppointments((prev) =>
+      prev.map((a) => (a.id === selectedAppointment.id ? updatedApt : a))
+    );
+
+    try {
+      localStorage.setItem(`mb_appointment_items_${selectedAppointment.id}`, JSON.stringify(currentItems));
+      const aptKey = `mb_appointments_${tenant.id}_${selectedDate}`;
+      const rawApts = localStorage.getItem(aptKey);
+      if (rawApts) {
+        const apts = JSON.parse(rawApts);
+        const updatedList = apts.map((a: any) => (a.id === selectedAppointment.id ? updatedApt : a));
+        localStorage.setItem(aptKey, JSON.stringify(updatedList));
+      }
+    } catch {}
+  };
+
+  const handleAddExtraService = async () => {
+    if (!selectedExtraServiceId || !selectedAppointment || !tenant?.id) return;
+    const serv = services.find((s) => s.id === selectedExtraServiceId);
+    if (!serv) return;
+
+    const itemTotal = serv.price_cents;
+    let newItemId = `item_srv_${Date.now()}`;
+
+    try {
+      const { data } = await (supabase.from("appointment_items") as any).insert({
+        tenant_id: tenant.id,
+        appointment_id: selectedAppointment.id,
+        item_type: "service",
+        service_id: serv.id,
+        description: `${serv.name} (Extra)`,
+        quantity: 1,
+        unit_price_cents: serv.price_cents,
+        total_cents: itemTotal,
+      }).select().single();
+
+      if (data?.id) newItemId = data.id;
+    } catch (e) {
+      console.warn("Insert extra service warning:", e);
+    }
+
+    const newItem = {
+      id: newItemId,
+      tenantId: tenant.id,
+      appointmentId: selectedAppointment.id,
+      itemType: "service",
+      item_type: "service",
+      serviceId: serv.id,
+      service_id: serv.id,
+      description: `${serv.name} (Extra)`,
+      quantity: 1,
+      unitPriceCents: serv.price_cents,
+      unit_price_cents: serv.price_cents,
+      totalCents: itemTotal,
+      total_cents: itemTotal,
+    };
+
+    const updated = [...appointmentItems, newItem];
+    setAppointmentItems(updated);
+    setIsAddingExtraService(false);
+    setSelectedExtraServiceId("");
+    saveUpdatedAppointmentTotal(updated, adjustmentType, adjustmentAmount, adjustmentNotes);
+  };
+
+  const handleAddExtraProduct = async () => {
+    if (!selectedExtraProductId || !selectedAppointment || !tenant?.id) return;
+    const prod = productsList.find((p) => p.id === selectedExtraProductId);
+    if (!prod) return;
+
+    const qty = Math.max(1, selectedExtraProductQty);
+    const itemTotal = prod.sale_price_cents * qty;
+    let newItemId = `item_prd_${Date.now()}`;
+
+    try {
+      const { data } = await (supabase.from("appointment_items") as any).insert({
+        tenant_id: tenant.id,
+        appointment_id: selectedAppointment.id,
+        item_type: "product",
+        product_id: prod.id,
+        description: prod.name,
+        quantity: qty,
+        unit_price_cents: prod.sale_price_cents,
+        total_cents: itemTotal,
+      }).select().single();
+
+      if (data?.id) newItemId = data.id;
+    } catch (e) {
+      console.warn("Insert extra product warning:", e);
+    }
+
+    const newItem = {
+      id: newItemId,
+      tenantId: tenant.id,
+      appointmentId: selectedAppointment.id,
+      itemType: "product",
+      item_type: "product",
+      productId: prod.id,
+      product_id: prod.id,
+      description: prod.name,
+      quantity: qty,
+      unitPriceCents: prod.sale_price_cents,
+      unit_price_cents: prod.sale_price_cents,
+      totalCents: itemTotal,
+      total_cents: itemTotal,
+    };
+
+    const updated = [...appointmentItems, newItem];
+    setAppointmentItems(updated);
+    setIsAddingExtraProduct(false);
+    setSelectedExtraProductId("");
+    setSelectedExtraProductQty(1);
+    saveUpdatedAppointmentTotal(updated, adjustmentType, adjustmentAmount, adjustmentNotes);
+  };
+
+  const handleRemoveItem = async (itemId: string) => {
+    try {
+      await (supabase.from("appointment_items") as any).delete().eq("id", itemId);
+    } catch (e) {
+      console.warn("Remove item error:", e);
+    }
+
+    const updated = appointmentItems.filter((i) => i.id !== itemId);
+    setAppointmentItems(updated);
+    saveUpdatedAppointmentTotal(updated, adjustmentType, adjustmentAmount, adjustmentNotes);
+  };
+
+  const handleSwapProduct = async (itemId: string, newProductId: string) => {
+    const newProd = productsList.find((p) => p.id === newProductId);
+    if (!newProd) return;
+    const existing = appointmentItems.find((i) => i.id === itemId);
+    const qty = existing?.quantity || 1;
+    const newTotal = newProd.sale_price_cents * qty;
+
+    try {
+      await (supabase.from("appointment_items") as any).update({
+        product_id: newProd.id,
+        description: newProd.name,
+        unit_price_cents: newProd.sale_price_cents,
+        total_cents: newTotal,
+      }).eq("id", itemId);
+    } catch (e) {
+      console.warn("Swap product warning:", e);
+    }
+
+    const updated = appointmentItems.map((i) => {
+      if (i.id === itemId) {
+        return {
+          ...i,
+          productId: newProd.id,
+          product_id: newProd.id,
+          description: newProd.name,
+          unitPriceCents: newProd.sale_price_cents,
+          unit_price_cents: newProd.sale_price_cents,
+          totalCents: newTotal,
+          total_cents: newTotal,
+        };
+      }
+      return i;
+    });
+
+    setAppointmentItems(updated);
+    setSwappingItemId(null);
+    setReplacementProductId("");
+    saveUpdatedAppointmentTotal(updated, adjustmentType, adjustmentAmount, adjustmentNotes);
+  };
+
+  const handleSaveAppointmentEdits = async () => {
+    if (!tenant?.id || !selectedAppointment || savingEdits) return;
+    setSavingEdits(true);
+    await saveUpdatedAppointmentTotal(appointmentItems, adjustmentType, adjustmentAmount, adjustmentNotes);
+    setSavingEdits(false);
+    setSuccessToast("Ajustes do atendimento salvos com sucesso!");
+    setTimeout(() => setSuccessToast(null), 3000);
+  };
+
   const updateAppointmentStatus = async (status: Appointment["status"]) => {
     if (!tenant?.id || !selectedAppointment || actionLoading) return;
     setActionLoading(true);
     setError(null);
+
+    const { baseCents, netAdjCents, totalCents } = calculateTotals(
+      selectedAppointment,
+      appointmentItems,
+      adjustmentType,
+      adjustmentAmount
+    );
+
     const { error: updateError } = await (supabase.from("appointments") as any)
-      .update({ status, cancellation_reason: status === "canceled" ? "Cancelado pelo backoffice" : null, canceled_by: status === "canceled" ? "backoffice" : null })
+      .update({
+        status,
+        price_cents: totalCents,
+        manual_adjustment_cents: netAdjCents,
+        adjustment_notes: adjustmentNotes.trim() || null,
+        cancellation_reason: status === "canceled" ? "Cancelado pelo backoffice" : null,
+        canceled_by: status === "canceled" ? "backoffice" : null,
+      })
       .eq("id", selectedAppointment.id)
       .eq("tenant_id", tenant.id);
+
     if (updateError) {
       setError(updateError.message);
       setActionLoading(false);
       return;
     }
+
+    // Se finalizado, assegura registro no caixa/transações financeiras
+    if (status === "completed") {
+      try {
+        const { data: existingTx } = await (supabase.from("financial_transactions") as any)
+          .select("id")
+          .eq("appointment_id", selectedAppointment.id)
+          .maybeSingle();
+
+        if (existingTx?.id) {
+          await (supabase.from("financial_transactions") as any)
+            .update({ amount_cents: totalCents })
+            .eq("id", existingTx.id);
+        } else {
+          await (supabase.from("financial_transactions") as any).insert({
+            tenant_id: tenant.id,
+            appointment_id: selectedAppointment.id,
+            type: "income",
+            category: "service",
+            amount_cents: totalCents,
+            description: `Atendimento concluído: ${selectedAppointment.customerName} - ${selectedAppointment.serviceName}`,
+            payment_method: "cash",
+            occurred_at: new Date().toISOString(),
+          });
+        }
+      } catch (fErr) {
+        console.warn("Financial transaction sync warning:", fErr);
+      }
+    }
+
     if (status === "canceled") {
       setAppointments((current) => current.filter((item) => item.id !== selectedAppointment.id));
     } else {
-      setAppointments((current) => current.map((item) => item.id === selectedAppointment.id ? { ...item, status } : item));
+      setAppointments((current) =>
+        current.map((item) =>
+          item.id === selectedAppointment.id
+            ? {
+                ...item,
+                status,
+                priceCents: totalCents,
+                basePriceCents: baseCents,
+                manualAdjustmentCents: netAdjCents,
+                adjustmentNotes: adjustmentNotes.trim(),
+                items: appointmentItems,
+              }
+            : item
+        )
+      );
     }
+
+    try {
+      const aptKey = `mb_appointments_${tenant.id}_${selectedDate}`;
+      const rawApts = localStorage.getItem(aptKey);
+      if (rawApts) {
+        const apts = JSON.parse(rawApts);
+        const updated = apts.map((a: any) =>
+          a.id === selectedAppointment.id
+            ? {
+                ...a,
+                status,
+                priceCents: totalCents,
+                items: appointmentItems,
+              }
+            : a
+        );
+        localStorage.setItem(aptKey, JSON.stringify(updated));
+      }
+    } catch {}
+
     setActionLoading(false);
     setIsActionModalOpen(false);
     setSelectedAppointment(null);
+    setSuccessToast(
+      status === "completed"
+        ? "Atendimento finalizado com sucesso! Lançado no caixa."
+        : status === "confirmed"
+        ? "Atendimento confirmado!"
+        : status === "in_progress"
+        ? "Atendimento iniciado!"
+        : "Atendimento cancelado."
+    );
+    setTimeout(() => setSuccessToast(null), 3500);
   };
 
   const timeSlots = [
@@ -750,7 +1224,7 @@ export const AgendaPage: React.FC = () => {
                     <div className="flex-1 min-w-0 rounded-xl border border-accent surface-accent-soft px-3 py-2">
                       <button
                         type="button"
-                        onClick={() => { setSelectedAppointment(status.appointment); setIsActionModalOpen(true); }}
+                        onClick={() => openAppointmentDetails(status.appointment)}
                         className="w-full text-left cursor-pointer"
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -872,7 +1346,7 @@ export const AgendaPage: React.FC = () => {
                     {status.type === "appointment" ? (
                       <button
                         type="button"
-                        onClick={() => { setSelectedAppointment(status.appointment); setIsActionModalOpen(true); }}
+                        onClick={() => openAppointmentDetails(status.appointment)}
                         className="w-full h-full rounded-xl p-2 text-xs border shadow-sm flex flex-col justify-between transition cursor-pointer hover:shadow"
                         style={{
                           backgroundColor: `${barber.color}15`,
@@ -885,7 +1359,10 @@ export const AgendaPage: React.FC = () => {
                             <span title="Recorrente"><Repeat className="w-3 h-3 text-secondary-on-light shrink-0" /></span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-600 truncate">{status.appointment.serviceName}</div>
+                        <div className="flex items-center justify-between gap-1 text-[11px] text-slate-600">
+                          <span className="truncate">{status.appointment.serviceName}</span>
+                          <span className="shrink-0 font-bold text-primary-on-light">{formatCurrency(status.appointment.priceCents)}</span>
+                        </div>
                       </button>
                     ) : status.type === "block" ? (
                       <button
@@ -1076,17 +1553,525 @@ export const AgendaPage: React.FC = () => {
       )}
 
       {isActionModalOpen && selectedAppointment && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="surface-card-light text-primary-on-light w-full max-w-md rounded-3xl p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-              <div><h3 className="text-lg font-bold">Atualizar atendimento</h3><p className="mt-1 text-sm text-slate-500">{selectedAppointment.customerName} · {selectedAppointment.serviceName}</p></div>
-              <button type="button" onClick={() => setIsActionModalOpen(false)} className="p-2 text-slate-500"><X className="w-5 h-5" /></button>
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="surface-card-light text-primary-on-light w-full max-w-xl rounded-3xl p-5 sm:p-6 shadow-2xl border border-slate-200 my-auto max-h-[92vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between border-b border-slate-200 pb-4 shrink-0">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-bold text-slate-900">Detalhes do Atendimento</h3>
+                  <span className={`text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full ${
+                    selectedAppointment.status === "completed"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : selectedAppointment.status === "in_progress"
+                      ? "bg-blue-100 text-blue-800"
+                      : selectedAppointment.status === "confirmed"
+                      ? "bg-purple-100 text-purple-800"
+                      : "bg-amber-100 text-amber-800"
+                  }`}>
+                    {selectedAppointment.status === "completed"
+                      ? "Concluído"
+                      : selectedAppointment.status === "in_progress"
+                      ? "Em Atendimento"
+                      : selectedAppointment.status === "confirmed"
+                      ? "Confirmado"
+                      : "Agendado"}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                  <span className="font-semibold text-slate-800 flex items-center gap-1">
+                    <User className="w-3.5 h-3.5 text-accent" />
+                    {selectedAppointment.customerName}
+                  </span>
+                  {selectedAppointment.customerPhone && (
+                    <a
+                      href={`https://wa.me/55${selectedAppointment.customerPhone.replace(/\D/g, "")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-emerald-700 hover:underline flex items-center gap-1 font-medium"
+                      title="Conversar no WhatsApp"
+                    >
+                      <Phone className="w-3 h-3" />
+                      {formatPhone(selectedAppointment.customerPhone)}
+                    </a>
+                  )}
+                  <span className="text-slate-400">·</span>
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    {selectedAppointment.time} ({selectedAppointment.durationMinutes} min)
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsActionModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <div className="grid grid-cols-1 gap-3 pt-5">
-              {selectedAppointment.status === "scheduled" && <button disabled={actionLoading} onClick={() => updateAppointmentStatus("confirmed")} className="min-h-11 rounded-xl bg-accent px-4 py-3 font-bold text-slate-950 disabled:opacity-50">{actionLoading ? "Salvando..." : "Confirmar atendimento"}</button>}
-              {(selectedAppointment.status === "scheduled" || selectedAppointment.status === "confirmed") && <button disabled={actionLoading} onClick={() => updateAppointmentStatus("in_progress")} className="min-h-11 rounded-xl surface-elevated-light px-4 py-3 font-bold text-primary-on-light disabled:opacity-50">Iniciar atendimento</button>}
-              {selectedAppointment.status === "in_progress" && <button disabled={actionLoading} onClick={() => updateAppointmentStatus("completed")} className="min-h-11 rounded-xl bg-accent px-4 py-3 font-bold text-slate-950 disabled:opacity-50">Finalizar atendimento</button>}
-              {selectedAppointment.status !== "completed" && <button disabled={actionLoading} onClick={() => updateAppointmentStatus("canceled")} className="min-h-11 rounded-xl border border-red-200 bg-red-50 px-4 py-3 font-bold text-red-700 disabled:opacity-50">Cancelar atendimento</button>}
+
+            {/* Modal Body (Scrollable) */}
+            <div className="overflow-y-auto space-y-4 py-4 pr-1 text-xs">
+              {/* Card Serviço Principal */}
+              <div className="p-3 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                    <Scissors className="w-3.5 h-3.5 text-accent" />
+                    Serviço Principal Agendado
+                  </span>
+                  <span className="font-black text-sm text-slate-900">
+                    {formatCurrency(selectedAppointment.basePriceCents ?? selectedAppointment.priceCents)}
+                  </span>
+                </div>
+                <div className="text-sm font-semibold text-slate-800">
+                  {selectedAppointment.serviceName}
+                </div>
+              </div>
+
+              {/* Seção de Itens Vinculados (Produtos e Serviços Extras) */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800">
+                    <ShoppingBag className="w-3.5 h-3.5 text-accent" />
+                    <span>Itens Vinculados ({appointmentItems.length})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddingExtraService(!isAddingExtraService);
+                        setIsAddingExtraProduct(false);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition flex items-center gap-1"
+                    >
+                      <Scissors className="w-3 h-3 text-sky-600" />
+                      <span>+ Serviço Extra</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAddingExtraProduct(!isAddingExtraProduct);
+                        setIsAddingExtraService(false);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition flex items-center gap-1"
+                    >
+                      <Package className="w-3 h-3 text-amber-600" />
+                      <span>+ Produto</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Formulário Inline: Adicionar Serviço Extra */}
+                {isAddingExtraService && (
+                  <div className="p-3 rounded-xl border border-sky-200 bg-sky-50/60 space-y-2 animate-in fade-in duration-150">
+                    <div className="font-bold text-sky-950 text-xs flex items-center gap-1.5">
+                      <Scissors className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Adicionar Serviço Extra a este Atendimento</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <select
+                        value={selectedExtraServiceId}
+                        onChange={(e) => setSelectedExtraServiceId(e.target.value)}
+                        className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-sky-300 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                      >
+                        <option value="">Selecione o serviço extra...</option>
+                        {services.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} — {formatCurrency(s.price_cents)} ({s.duration_minutes} min)
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={handleAddExtraService}
+                          disabled={!selectedExtraServiceId}
+                          className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs transition disabled:opacity-50"
+                        >
+                          Adicionar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddingExtraService(false);
+                            setSelectedExtraServiceId("");
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 font-medium text-xs border border-slate-200"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Formulário Inline: Adicionar Produto */}
+                {isAddingExtraProduct && (
+                  <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/60 space-y-2 animate-in fade-in duration-150">
+                    <div className="font-bold text-amber-950 text-xs flex items-center gap-1.5">
+                      <Package className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Adicionar Produto a este Atendimento</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="sm:col-span-2">
+                        <select
+                          value={selectedExtraProductId}
+                          onChange={(e) => setSelectedExtraProductId(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-amber-300 bg-white text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        >
+                          <option value="">Selecione o produto...</option>
+                          {productsList.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} — {formatCurrency(p.sale_price_cents)} ({p.current_stock} un estoque)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="flex items-center border border-amber-300 rounded-lg bg-white px-1.5 py-0.5">
+                          <span className="text-[10px] text-slate-400 mr-1">Qtd:</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            value={selectedExtraProductQty}
+                            onChange={(e) => setSelectedExtraProductQty(Math.max(1, parseInt(e.target.value) || 1))}
+                            className="w-10 text-center font-bold text-xs text-slate-900 focus:outline-none"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleAddExtraProduct}
+                          disabled={!selectedExtraProductId}
+                          className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition disabled:opacity-50 shrink-0"
+                        >
+                          Adicionar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddingExtraProduct(false);
+                            setSelectedExtraProductId("");
+                          }}
+                          className="px-2 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 font-medium text-xs border border-slate-200 shrink-0"
+                        >
+                          X
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Lista de Itens Vinculados */}
+                {loadingItems ? (
+                  <div className="py-4 flex items-center justify-center gap-2 text-slate-400">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Carregando itens vinculados...</span>
+                  </div>
+                ) : appointmentItems.length === 0 ? (
+                  <div className="p-3.5 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">
+                    Nenhum produto ou serviço extra vinculado ainda. Use os botões acima para adicionar.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {appointmentItems.map((item) => {
+                      const isProduct = item.itemType === "product" || item.item_type === "product";
+                      const isSwapping = swappingItemId === item.id;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="p-2.5 rounded-xl border border-slate-200 bg-white space-y-2 shadow-xs"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${
+                                  isProduct ? "bg-amber-100 text-amber-800" : "bg-sky-100 text-sky-800"
+                                }`}
+                              >
+                                {isProduct ? "Produto" : "Serviço Extra"}
+                              </span>
+                              <span className="font-bold text-slate-900 truncate">
+                                {item.description}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="font-black text-slate-900">
+                                {formatCurrency(item.totalCents || item.total_cents || 0)}
+                              </span>
+
+                              {isProduct && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSwappingItemId(isSwapping ? null : item.id);
+                                    setReplacementProductId("");
+                                  }}
+                                  className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition"
+                                  title="Trocar por outro produto"
+                                >
+                                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(item.id)}
+                                className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                                title="Remover item"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 px-0.5">
+                            <span>
+                              {item.quantity}x {formatCurrency(item.unitPriceCents || item.unit_price_cents || 0)}
+                            </span>
+                            {isProduct && (
+                              <span className="text-[10px] text-amber-700 font-medium">
+                                Entrega presencial no atendimento
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Formulário de Troca de Produto */}
+                          {isSwapping && (
+                            <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5">
+                              <select
+                                value={replacementProductId}
+                                onChange={(e) => setReplacementProductId(e.target.value)}
+                                className="flex-1 px-2 py-1 text-xs rounded-lg border border-amber-300 bg-white text-slate-900 focus:outline-none"
+                              >
+                                <option value="">Selecione o novo produto...</option>
+                                {productsList.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name} — {formatCurrency(p.sale_price_cents)}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => handleSwapProduct(item.id, replacementProductId)}
+                                disabled={!replacementProductId}
+                                className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs transition disabled:opacity-50"
+                              >
+                                Trocar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSwappingItemId(null)}
+                                className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Seção de Ajuste Manual de Valor (Desconto ou Acréscimo) */}
+              <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-accent" />
+                    Ajuste de Valor (Desconto / Acréscimo)
+                  </span>
+                  <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdjustmentType("none");
+                        setAdjustmentAmount("");
+                        setAdjustmentNotes("");
+                      }}
+                      className={`px-2 py-1 rounded-md transition ${
+                        adjustmentType === "none" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Nenhum
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustmentType("discount")}
+                      className={`px-2 py-1 rounded-md transition ${
+                        adjustmentType === "discount" ? "bg-red-500 text-white shadow-xs" : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Desconto (-)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustmentType("surcharge")}
+                      className={`px-2 py-1 rounded-md transition ${
+                        adjustmentType === "surcharge" ? "bg-emerald-600 text-white shadow-xs" : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      Acréscimo (+)
+                    </button>
+                  </div>
+                </div>
+
+                {adjustmentType !== "none" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 animate-in fade-in duration-150">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                        Valor do {adjustmentType === "discount" ? "Desconto" : "Acréscimo"} (R$):
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">
+                          {adjustmentType === "discount" ? "- R$" : "+ R$"}
+                        </span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={adjustmentAmount}
+                          onChange={(e) => setAdjustmentAmount(e.target.value)}
+                          placeholder="0,00"
+                          className="w-full pl-11 pr-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-900 font-bold text-xs focus:outline-none focus:ring-1 focus:ring-accent"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 mb-1">
+                        Motivo / Observação:
+                      </label>
+                      <input
+                        type="text"
+                        value={adjustmentNotes}
+                        onChange={(e) => setAdjustmentNotes(e.target.value)}
+                        placeholder="Ex: Fidelidade, Adicional navalha..."
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-900 text-xs focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Resumo Financeiro Consolidado */}
+              {(() => {
+                const { baseCents, itemsCents, netAdjCents, totalCents } = calculateTotals(
+                  selectedAppointment,
+                  appointmentItems,
+                  adjustmentType,
+                  adjustmentAmount
+                );
+
+                return (
+                  <div className="p-3.5 rounded-2xl border border-slate-800 bg-slate-950 text-white space-y-2 shadow-lg">
+                    <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                      <span>Serviço Original:</span>
+                      <span className="font-semibold text-slate-200">{formatCurrency(baseCents)}</span>
+                    </div>
+
+                    {itemsCents > 0 && (
+                      <div className="flex justify-between items-center text-slate-400 text-[11px]">
+                        <span>Itens Extras ({appointmentItems.length}):</span>
+                        <span className="font-semibold text-emerald-400">+{formatCurrency(itemsCents)}</span>
+                      </div>
+                    )}
+
+                    {netAdjCents !== 0 && (
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-slate-400">
+                          {netAdjCents < 0 ? "Desconto Aplicado:" : "Acréscimo Aplicado:"}
+                        </span>
+                        <span className={`font-semibold ${netAdjCents < 0 ? "text-red-400" : "text-emerald-400"}`}>
+                          {netAdjCents < 0 ? "-" : "+"}{formatCurrency(Math.abs(netAdjCents))}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-800 flex justify-between items-center">
+                      <span className="font-bold text-sm text-slate-200">Total do Atendimento:</span>
+                      <strong className="text-accent text-lg font-black">{formatCurrency(totalCents)}</strong>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Modal Footer: Ações Operacionais de Status */}
+            <div className="pt-3 border-t border-slate-200 shrink-0 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveAppointmentEdits}
+                  disabled={savingEdits || actionLoading}
+                  className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition border border-slate-200 flex items-center justify-center gap-1.5"
+                >
+                  {savingEdits ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Salvando Ajustes...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Salvar Alterações de Valor</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {selectedAppointment.status === "scheduled" && (
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() => updateAppointmentStatus("confirmed")}
+                    className="w-full min-h-11 rounded-xl bg-accent hover-bg-accent text-slate-950 font-bold text-xs shadow-md shadow-accent/20 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>{actionLoading ? "Salvando..." : "Confirmar Atendimento"}</span>
+                  </button>
+                )}
+
+                {(selectedAppointment.status === "scheduled" || selectedAppointment.status === "confirmed") && (
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() => updateAppointmentStatus("in_progress")}
+                    className="w-full min-h-11 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-900/20 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    <Scissors className="w-4 h-4" />
+                    <span>Iniciar Atendimento</span>
+                  </button>
+                )}
+
+                {selectedAppointment.status === "in_progress" && (
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() => updateAppointmentStatus("completed")}
+                    className="w-full min-h-11 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-950/20 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Finalizar Atendimento (Caixa)</span>
+                  </button>
+                )}
+
+                {selectedAppointment.status !== "completed" && (
+                  <button
+                    type="button"
+                    disabled={actionLoading}
+                    onClick={() => updateAppointmentStatus("canceled")}
+                    className="w-full min-h-11 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Cancelar Atendimento</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

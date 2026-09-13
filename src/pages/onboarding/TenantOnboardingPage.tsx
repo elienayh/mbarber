@@ -20,6 +20,7 @@ import {
   Search,
 } from "lucide-react";
 import { sanitizeSlug, validateSlugSyntax } from "@/lib/authRedirect";
+import { LogoIcon } from "@/components/common/Logo";
 
 const BRAZILIAN_STATES = [
   "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA",
@@ -628,8 +629,8 @@ export const TenantOnboardingPage: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl my-8">
         <div className="text-center mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-accent text-slate-950 font-black text-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-accent">
-            MB
+          <div className="flex justify-center mb-3">
+            <LogoIcon size="lg" className="w-14 h-14 shadow-lg shadow-orange-500/20" />
           </div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-accent/10 border border-accent/30 text-accent text-xs font-semibold mb-2">
             <Sparkles className="w-3.5 h-3.5" /> Configuração da Barbearia • 35 Dias Grátis

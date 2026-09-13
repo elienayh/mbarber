@@ -23,6 +23,7 @@ import {
   UserCheck,
   ExternalLink,
 } from "lucide-react";
+import { LogoIcon } from "@/components/common/Logo";
 
 export const Home: React.FC = () => {
   const navigate = useNavigate();
@@ -87,9 +88,7 @@ export const Home: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-18 flex items-center justify-between">
           {/* Brand */}
           <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="w-10 h-10 rounded-xl bg-accent text-stone-950 flex items-center justify-center font-black text-xl shadow-md shadow-accent group-hover:scale-105 transition">
-              <Scissors className="w-5 h-5 stroke-[2.5]" />
-            </div>
+            <LogoIcon size="md" className="group-hover:scale-105 transition" />
             <div className="flex flex-col">
               <span className="font-extrabold text-xl tracking-tight text-white font-display">
                 MBarber
@@ -889,8 +888,8 @@ export const Home: React.FC = () => {
       <section className="py-20 bg-gradient-to-b from-stone-950 to-stone-900">
         <div className="max-w-5xl mx-auto px-4 sm:px-6">
           <div className="rounded-3xl p-8 sm:p-12 bg-gradient-to-br from-stone-900 via-stone-900/90 to-stone-950 border border-stone-800 text-center relative overflow-hidden shadow-2xl">
-            <div className="w-16 h-16 rounded-2xl surface-muted-dark text-secondary-on-dark flex items-center justify-center mx-auto mb-6 border border-muted-dark">
-              <Scissors className="w-8 h-8 stroke-[2.2]" />
+            <div className="mx-auto mb-6 flex justify-center">
+              <LogoIcon size="xl" className="w-16 h-16 shadow-2xl" />
             </div>
 
             <h2 className="text-3xl sm:text-5xl font-black text-white mb-4 tracking-tight font-display">
@@ -925,9 +924,7 @@ export const Home: React.FC = () => {
       <footer className="border-t border-stone-900 bg-stone-950 py-10 text-stone-400 text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-accent text-stone-950 flex items-center justify-center font-black text-xs">
-              <Scissors className="w-4 h-4" />
-            </div>
+            <LogoIcon size="xs" />
             <span className="font-bold text-sm text-white font-display">MBarber</span>
             <span className="text-stone-600">|</span>
             <span className="text-stone-500">Agendamento & Gestão Inteligente</span>

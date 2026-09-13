@@ -13,10 +13,14 @@ import {
   ExternalLink,
   Loader2,
   MapPin,
+  Minus,
   Navigation,
+  Package,
   Phone,
+  Plus,
   RefreshCw,
   Share2,
+  ShoppingBag,
   Sparkles,
   User,
 } from "lucide-react";
@@ -24,6 +28,7 @@ import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { formatCurrency, formatPhone } from "@/lib/utils";
 import { MapLocationViewer } from "@/components/MapLocationViewer";
 import { broadcastNewAppointment } from "@/lib/notifications";
+import { LogoIcon } from "@/components/common/Logo";
 
 interface Service {
   id: string;
@@ -94,6 +99,50 @@ export const PublicChat: React.FC = () => {
   const [customerTotalVisits, setCustomerTotalVisits] = useState(0);
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
+
+  // Estados para Venda de Produtos no Chat (Item 2)
+  const [bookedAppointmentId, setBookedAppointmentId] = useState<string | null>(null);
+  const [tenantProducts, setTenantProducts] = useState<any[]>([]);
+  const [selectedProductQuantities, setSelectedProductQuantities] = useState<Record<string, number>>({});
+  const [savingProducts, setSavingProducts] = useState(false);
+  const [productsConfirmed, setProductsConfirmed] = useState(false);
+  const [confirmedItems, setConfirmedItems] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (step === 6 && tenant?.id) {
+      const loadProducts = async () => {
+        // Cache local primeiro
+        try {
+          const cached = localStorage.getItem(`mb_products_${tenant.id}`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+              setTenantProducts(parsed.filter((p: any) => p.is_active !== false && p.current_stock > 0 && p.sale_price_cents > 0));
+            }
+          }
+        } catch {}
+
+        try {
+          const { data, error } = await (supabase.from("products") as any)
+            .select("id, name, sale_price_cents, current_stock, image_url, images")
+            .eq("tenant_id", tenant.id)
+            .eq("is_active", true)
+            .gt("current_stock", 0)
+            .gt("sale_price_cents", 0)
+            .order("name");
+
+          if (!error && data && data.length > 0) {
+            setTenantProducts(data);
+          }
+        } catch (e) {
+          console.warn("Could not load products for public chat:", e);
+        }
+      };
+
+      loadProducts();
+    }
+  }, [step, tenant?.id]);
 
   useEffect(() => {
     const loadPublicCatalog = async () => {
@@ -120,16 +169,60 @@ export const PublicChat: React.FC = () => {
         return;
       }
 
-      if (!dbTenant) {
+      let effectiveTenant: TenantInfo | null = dbTenant ? ({ ...dbTenant } as TenantInfo) : null;
+
+      // Se o tenant não foi encontrado diretamente pelo Supabase, verificar cache local
+      if (!effectiveTenant) {
+        try {
+          const cachedCatalog =
+            localStorage.getItem(`mb_public_catalog_${cleanSlug}`) || localStorage.getItem("mb_public_catalog_active");
+          if (cachedCatalog) {
+            const parsed = JSON.parse(cachedCatalog);
+            if (parsed?.tenant) {
+              effectiveTenant = parsed.tenant as TenantInfo;
+            }
+          }
+        } catch {}
+      }
+
+      if (!effectiveTenant) {
         setError("Barbearia não encontrada. Verifique o link e tente novamente.");
         setLoading(false);
         return;
       }
 
+      // Garantir que a logo_url seja recuperada caso tenha sido salva ou atualizada recentemente
+      if (!effectiveTenant.logo_url) {
+        try {
+          const cachedCatalog =
+            localStorage.getItem(`mb_public_catalog_${cleanSlug}`) || localStorage.getItem("mb_public_catalog_active");
+          if (cachedCatalog) {
+            const parsed = JSON.parse(cachedCatalog);
+            if (parsed?.tenant?.logo_url) {
+              effectiveTenant.logo_url = parsed.tenant.logo_url;
+            }
+          }
+          if (!effectiveTenant.logo_url && effectiveTenant.id) {
+            const customTenant =
+              localStorage.getItem(`mb_custom_tenant_${effectiveTenant.id}`) ||
+              localStorage.getItem(`mb_settings_${effectiveTenant.id}`) ||
+              localStorage.getItem("mb_active_tenant");
+            if (customTenant) {
+              const parsed = JSON.parse(customTenant);
+              if (parsed?.logo_url) {
+                effectiveTenant.logo_url = parsed.logo_url;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Aviso ao buscar logo_url em cache:", e);
+        }
+      }
+
       // 2. Carregar exclusivamente os serviços reais do tenant
       const { data: dbServices, error: servicesErr } = await (supabase.from("services") as any)
         .select("id, name, category, price_cents, duration_minutes, is_active")
-        .eq("tenant_id", dbTenant.id)
+        .eq("tenant_id", effectiveTenant.id)
         .eq("is_active", true)
         .order("name");
 
@@ -140,7 +233,7 @@ export const PublicChat: React.FC = () => {
       // 3. Carregar exclusivamente os profissionais reais do tenant
       const { data: dbPros, error: prosErr } = await (supabase.from("professionals") as any)
         .select("id, name, nickname, color_hex, avatar_url, is_active")
-        .eq("tenant_id", dbTenant.id)
+        .eq("tenant_id", effectiveTenant.id)
         .eq("is_active", true)
         .order("name");
 
@@ -151,7 +244,7 @@ export const PublicChat: React.FC = () => {
       const realServices: Service[] = (dbServices || []).filter((s: any) => s.is_active !== false);
       const realProfessionals: Professional[] = (dbPros || []).filter((p: any) => p.is_active !== false);
 
-      setTenant(dbTenant as TenantInfo);
+      setTenant(effectiveTenant);
       setServices(realServices);
       setProfessionals(realProfessionals);
 
@@ -491,12 +584,18 @@ export const PublicChat: React.FC = () => {
     }
 
     if (data?.booking_code) {
+      const generatedOrReceivedId = data.appointment_id || data.booking_id || `apt_${Date.now()}`;
+      setBookedAppointmentId(generatedOrReceivedId);
+      setSelectedProductQuantities({});
+      setConfirmedItems([]);
+      setProductsConfirmed(false);
+
       try {
         const aptKey = `mb_appointments_${tenant.id}_${selectedDate}`;
         const existingAptsRaw = localStorage.getItem(aptKey);
         const existingApts = existingAptsRaw ? JSON.parse(existingAptsRaw) : [];
         const newApt = {
-          id: data.booking_id || `apt_${Date.now()}`,
+          id: generatedOrReceivedId,
           time: selectedTime,
           client: customerName,
           phone: customerPhone,
@@ -559,6 +658,133 @@ export const PublicChat: React.FC = () => {
     setBookingLoading(false);
   };
 
+  const handleProductQuantityChange = (productId: string, delta: number) => {
+    setSelectedProductQuantities((prev) => {
+      const current = prev[productId] || 0;
+      const next = Math.max(0, current + delta);
+      if (next === 0) {
+        const copy = { ...prev };
+        delete copy[productId];
+        return copy;
+      }
+      return { ...prev, [productId]: next };
+    });
+  };
+
+  const selectedProductsList = useMemo(() => {
+    return tenantProducts.filter((p) => (selectedProductQuantities[p.id] || 0) > 0);
+  }, [tenantProducts, selectedProductQuantities]);
+
+  const totalProductsCents = useMemo(() => {
+    return selectedProductsList.reduce((acc, p) => {
+      const qty = selectedProductQuantities[p.id] || 0;
+      return acc + p.sale_price_cents * qty;
+    }, 0);
+  }, [selectedProductsList, selectedProductQuantities]);
+
+  const totalAppointmentWithProductsCents = (selectedService?.price_cents || 0) + totalProductsCents;
+
+  const handleConfirmProductsPurchase = async () => {
+    if (!bookedAppointmentId || !tenant?.id || selectedProductsList.length === 0 || savingProducts) return;
+    setSavingProducts(true);
+
+    const savedItems: any[] = [];
+    for (const prod of selectedProductsList) {
+      const qty = selectedProductQuantities[prod.id] || 1;
+      const itemTotal = prod.sale_price_cents * qty;
+
+      try {
+        const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)("add_appointment_product", {
+          p_appointment_id: bookedAppointmentId,
+          p_product_id: prod.id,
+          p_quantity: qty,
+        });
+
+        if (!rpcErr && rpcData?.item_id) {
+          savedItems.push({
+            id: rpcData.item_id,
+            productId: prod.id,
+            description: prod.name,
+            quantity: qty,
+            unitPriceCents: prod.sale_price_cents,
+            totalCents: itemTotal,
+            imageUrl: prod.image_url || (Array.isArray(prod.images) && prod.images[0]) || null,
+          });
+          continue;
+        }
+      } catch {}
+
+      // Fallback: direct insert in appointment_items
+      try {
+        const { data: insData } = await (supabase.from("appointment_items") as any).insert({
+          tenant_id: tenant.id,
+          appointment_id: bookedAppointmentId,
+          item_type: "product",
+          product_id: prod.id,
+          description: prod.name,
+          quantity: qty,
+          unit_price_cents: prod.sale_price_cents,
+          total_cents: itemTotal,
+        }).select().single();
+
+        savedItems.push({
+          id: insData?.id || `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          productId: prod.id,
+          description: prod.name,
+          quantity: qty,
+          unitPriceCents: prod.sale_price_cents,
+          totalCents: itemTotal,
+          imageUrl: prod.image_url || (Array.isArray(prod.images) && prod.images[0]) || null,
+        });
+      } catch (err) {
+        console.warn("Direct insert appointment item error:", err);
+        savedItems.push({
+          id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          productId: prod.id,
+          description: prod.name,
+          quantity: qty,
+          unitPriceCents: prod.sale_price_cents,
+          totalCents: itemTotal,
+          imageUrl: prod.image_url || (Array.isArray(prod.images) && prod.images[0]) || null,
+        });
+      }
+    }
+
+    // Atualiza o valor total do agendamento no Supabase
+    try {
+      await (supabase.from("appointments") as any)
+        .update({ price_cents: totalAppointmentWithProductsCents })
+        .eq("id", bookedAppointmentId);
+    } catch (err) {
+      console.warn("Error updating appointment total price:", err);
+    }
+
+    // Atualiza o cache local do agendamento com os produtos vinculados
+    try {
+      localStorage.setItem(`mb_appointment_items_${bookedAppointmentId}`, JSON.stringify(savedItems));
+      const aptKey = `mb_appointments_${tenant.id}_${selectedDate}`;
+      const existingAptsRaw = localStorage.getItem(aptKey);
+      if (existingAptsRaw) {
+        const apts = JSON.parse(existingAptsRaw);
+        const updated = apts.map((a: any) => {
+          if (a.id === bookedAppointmentId || a.time === selectedTime) {
+            return {
+              ...a,
+              priceCents: totalAppointmentWithProductsCents,
+              items: savedItems,
+            };
+          }
+          return a;
+        });
+        localStorage.setItem(aptKey, JSON.stringify(updated));
+      }
+    } catch {}
+
+    setConfirmedItems(savedItems);
+    setProductsConfirmed(true);
+    setSavingProducts(false);
+  };
+
   if (loading) {
     return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-200">Carregando agenda pública...</div>;
   }
@@ -583,6 +809,27 @@ export const PublicChat: React.FC = () => {
     .filter(Boolean)
     .join(", ");
 
+  const renderBotAvatar = () => {
+    if (tenant.logo_url && !logoLoadFailed) {
+      return (
+        <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-slate-700 bg-slate-800 shadow-sm flex items-center justify-center">
+          <img
+            src={tenant.logo_url}
+            alt={tenant.trade_name || tenant.name || "Logo da Barbearia"}
+            className="w-full h-full object-cover"
+            onError={() => setLogoLoadFailed(true)}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 shadow-sm border border-orange-500/30 flex items-center justify-center">
+        <LogoIcon size="xs" className="w-full h-full rounded-full object-cover shadow-none" alt="MBarber" />
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-start p-3 sm:p-6 selection:bg-accent selection:text-slate-950">
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col min-h-[90vh]">
@@ -597,8 +844,13 @@ export const PublicChat: React.FC = () => {
               </button>
             )}
             <div className="w-10 h-10 rounded-full bg-accent text-slate-950 font-black flex items-center justify-center text-sm shadow-md overflow-hidden shrink-0 border border-accent/40">
-              {tenant.logo_url ? (
-                <img src={tenant.logo_url} alt={tenant.trade_name || tenant.name} className="w-full h-full object-cover" />
+              {tenant.logo_url && !logoLoadFailed ? (
+                <img
+                  src={tenant.logo_url}
+                  alt={tenant.trade_name || tenant.name}
+                  className="w-full h-full object-cover"
+                  onError={() => setLogoLoadFailed(true)}
+                />
               ) : (
                 (tenant.trade_name || tenant.name || "MB").slice(0, 2).toUpperCase()
               )}
@@ -624,9 +876,7 @@ export const PublicChat: React.FC = () => {
 
         <div className="flex-1 p-4 overflow-y-auto space-y-4">
           <div className="flex gap-2">
-            <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-              ✂️
-            </div>
+            {renderBotAvatar()}
             <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3 text-sm text-slate-200 max-w-[85%] shadow">
               <p>
                 Olá! Seja bem-vindo à <strong>{tenant.trade_name || tenant.name}</strong>.
@@ -708,9 +958,7 @@ export const PublicChat: React.FC = () => {
               {lookupAttempted && customerFound && (
                 <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
                   <div className="flex gap-2">
-                    <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                      ✂️
-                    </div>
+                    {renderBotAvatar()}
                     <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3.5 text-sm text-slate-200 space-y-1.5 max-w-[88%] shadow border border-emerald-500/30">
                       <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-xs">
                         <Sparkles className="w-4 h-4" />
@@ -857,9 +1105,7 @@ export const PublicChat: React.FC = () => {
           {step === 2 && (
             <>
               <div className="flex gap-2">
-                <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                  ✂️
-                </div>
+                {renderBotAvatar()}
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3 text-sm text-slate-200 max-w-[85%] shadow">
                   {customerName ? (
                     <p>Qual serviço você gostaria de agendar hoje, <strong>{customerName.split(" ")[0]}</strong>?</p>
@@ -899,9 +1145,7 @@ export const PublicChat: React.FC = () => {
           {step === 3 && selectedService && (
             <>
               <div className="flex gap-2">
-                <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                  ✂️
-                </div>
+                {renderBotAvatar()}
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3 text-sm text-slate-200 max-w-[85%] shadow">
                   Escolha o profissional que irá te atender:
                 </div>
@@ -966,9 +1210,7 @@ export const PublicChat: React.FC = () => {
           {step === 4 && selectedProfessional && (
             <>
               <div className="flex gap-2">
-                <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                  ✂️
-                </div>
+                {renderBotAvatar()}
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3 text-sm text-slate-200 max-w-[85%] shadow">
                   Escolha o dia e o horário desejado. Ao tocar em qualquer dia, os horários disponíveis aparecem logo abaixo:
                 </div>
@@ -1143,9 +1385,7 @@ export const PublicChat: React.FC = () => {
           {step === 5 && selectedTime && (
             <>
               <div className="flex gap-2">
-                <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                  ✂️
-                </div>
+                {renderBotAvatar()}
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3 text-sm text-slate-200 max-w-[85%] shadow">
                   Excelente escolha! Revise os detalhes e preencha seus dados para finalizar:
                 </div>
@@ -1275,12 +1515,185 @@ export const PublicChat: React.FC = () => {
                     <span className="text-slate-400">Cliente:</span>
                     <strong className="text-white">{customerName}</strong>
                   </div>
-                  <div className="flex justify-between items-center pt-1 border-t border-slate-800">
-                    <span className="text-slate-400">Valor Estimado:</span>
-                    <strong className="text-white font-bold">{selectedService ? formatCurrency(selectedService.price_cents) : "A consultar"}</strong>
-                  </div>
+                  {confirmedItems.length > 0 ? (
+                    <div className="space-y-1.5 pt-1.5 border-t border-slate-800">
+                      <div className="flex justify-between items-center text-slate-400">
+                        <span>Serviço:</span>
+                        <span>{selectedService ? formatCurrency(selectedService.price_cents) : "—"}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-400">
+                        <span>Produtos ({confirmedItems.reduce((acc, i) => acc + i.quantity, 0)} un):</span>
+                        <span className="text-emerald-400">+{formatCurrency(totalProductsCents)}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-1 border-t border-slate-800/80">
+                        <span className="text-white font-bold">Total do Atendimento:</span>
+                        <strong className="text-accent text-sm font-bold">{formatCurrency(totalAppointmentWithProductsCents)}</strong>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-800">
+                      <span className="text-slate-400">Valor Estimado:</span>
+                      <strong className="text-white font-bold">{selectedService ? formatCurrency(selectedService.price_cents) : "A consultar"}</strong>
+                    </div>
+                  )}
                 </div>
               </div>
+
+              {/* Seção de Venda de Produtos no Chat (Item 2) */}
+              {tenantProducts.length > 0 && (
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/90 p-4 text-xs space-y-3 shadow-lg">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-accent/10 text-accent flex items-center justify-center">
+                        <ShoppingBag className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm text-white">Produtos da Barbearia</h4>
+                        <p className="text-[11px] text-slate-400">Retire e pague no dia com o barbeiro</p>
+                      </div>
+                    </div>
+                    {confirmedItems.length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+                        Reservado
+                      </span>
+                    )}
+                  </div>
+
+                  {productsConfirmed ? (
+                    <div className="space-y-2.5">
+                      <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>Produtos vinculados! O barbeiro entregará durante o seu atendimento.</span>
+                      </div>
+                      <div className="divide-y divide-slate-800/80">
+                        {confirmedItems.map((item, idx) => (
+                          <div key={idx} className="py-2 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5">
+                              {item.imageUrl ? (
+                                <img src={item.imageUrl} alt={item.description} className="w-8 h-8 rounded-lg object-cover border border-slate-700" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400">
+                                  <Package className="w-4 h-4" />
+                                </div>
+                              )}
+                              <div>
+                                <div className="font-bold text-white text-xs">{item.description}</div>
+                                <div className="text-[10px] text-slate-400">{item.quantity}x {formatCurrency(item.unitPriceCents)}</div>
+                              </div>
+                            </div>
+                            <span className="font-bold text-accent">{formatCurrency(item.totalCents)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                        {tenantProducts.map((prod) => {
+                          const qty = selectedProductQuantities[prod.id] || 0;
+                          const displayImg = prod.image_url || (Array.isArray(prod.images) && prod.images[0]) || null;
+                          return (
+                            <div
+                              key={prod.id}
+                              className={`p-2.5 rounded-xl border transition flex items-center justify-between gap-3 ${
+                                qty > 0 ? "bg-accent/5 border-accent/40" : "bg-slate-800/60 border-slate-700 hover:border-slate-600"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                {displayImg ? (
+                                  <img
+                                    src={displayImg}
+                                    alt={prod.name}
+                                    className="w-11 h-11 rounded-lg object-cover border border-slate-700 shrink-0 shadow-sm"
+                                  />
+                                ) : (
+                                  <div className="w-11 h-11 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400 shrink-0 border border-slate-700">
+                                    <Package className="w-5 h-5" />
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <h5 className="font-bold text-white text-xs truncate">{prod.name}</h5>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="font-black text-accent text-xs">
+                                      {formatCurrency(prod.sale_price_cents)}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500">
+                                      {prod.current_stock} em estoque
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="shrink-0">
+                                {qty === 0 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleProductQuantityChange(prod.id, 1)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-accent hover:text-slate-950 text-accent font-bold text-xs transition border border-accent/20 flex items-center gap-1"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Adicionar</span>
+                                  </button>
+                                ) : (
+                                  <div className="flex items-center gap-1 bg-slate-900 border border-accent/40 rounded-lg p-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleProductQuantityChange(prod.id, -1)}
+                                      className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                      title="Diminuir quantidade"
+                                    >
+                                      <Minus className="w-3.5 h-3.5" />
+                                    </button>
+                                    <span className="w-6 text-center font-black text-xs text-white">
+                                      {qty}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleProductQuantityChange(prod.id, 1)}
+                                      disabled={qty >= prod.current_stock}
+                                      className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition disabled:opacity-30"
+                                      title="Aumentar quantidade"
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {selectedProductsList.length > 0 && (
+                        <div className="pt-2 border-t border-slate-800 space-y-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400">Total dos produtos selecionados:</span>
+                            <strong className="text-accent font-bold">{formatCurrency(totalProductsCents)}</strong>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleConfirmProductsPurchase}
+                            disabled={savingProducts}
+                            className="w-full py-2.5 rounded-xl bg-accent hover-bg-accent text-slate-950 font-black text-xs transition shadow-md shadow-accent/20 flex items-center justify-center gap-2"
+                          >
+                            {savingProducts ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Vinculando ao Agendamento...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Adicionar ao Agendamento (+{formatCurrency(totalProductsCents)})</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Endereço e Localização no Mapa */}
               {tenantAddress && (
@@ -1329,6 +1742,10 @@ export const PublicChat: React.FC = () => {
                     ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
                     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(tenantAddress || "Barbearia")}`;
 
+                  const productsText = confirmedItems.length > 0
+                    ? `🛍️ *Produtos Reservados:* ${confirmedItems.map((i) => `${i.quantity}x ${i.description}`).join(', ')}\n💰 *Total com Produtos:* ${formatCurrency(totalAppointmentWithProductsCents)}\n`
+                    : "";
+
                   const message = encodeURIComponent(
                     `✂️ *Agendamento Confirmado!*\n` +
                     `💈 *Barbearia:* ${tenant.trade_name || tenant.name}\n` +
@@ -1337,6 +1754,7 @@ export const PublicChat: React.FC = () => {
                     `👤 *Profissional:* ${selectedProfessional?.name || "Equipe"}\n` +
                     `📅 *Data:* ${new Date(selectedDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "long" })} às ${selectedTime}\n` +
                     `👤 *Cliente:* ${customerName}\n` +
+                    productsText +
                     `📍 *Endereço:* ${tenantAddress || "Ver no link abaixo"}\n` +
                     `🗺️ *Localização no Mapa:* ${mapsUrl}\n\n` +
                     `Aguardamos você!`
@@ -1377,8 +1795,9 @@ export const PublicChat: React.FC = () => {
           )}
         </div>
 
-        <footer className="p-3 bg-slate-950/80 border-t border-slate-800 text-center text-[10px] text-slate-500">
-          Powered by <span className="text-accent font-semibold">MetricBarber</span> • Agendamento Seguro
+        <footer className="p-3 bg-slate-950/80 border-t border-slate-800 flex items-center justify-center gap-1.5 text-[10px] text-slate-500">
+          <LogoIcon size="xs" className="w-4 h-4 rounded-md shadow-none" />
+          <span>Powered by <span className="text-accent font-semibold">MetricBarber</span> • Agendamento Seguro</span>
         </footer>
       </div>
     </div>

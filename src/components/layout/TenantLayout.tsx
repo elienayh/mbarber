@@ -19,6 +19,7 @@ import {
   Sparkles,
   CreditCard,
 } from "lucide-react";
+import { LogoIcon } from "@/components/common/Logo";
 
 export const TenantLayout: React.FC = () => {
   const location = useLocation();
@@ -74,14 +75,13 @@ export const TenantLayout: React.FC = () => {
             {tenant?.logo_url ? (
               <img
                 src={tenant.logo_url}
-                alt={tenant.trade_name || "Barbearia"}
+                alt={tenant.trade_name || tenant.name || "Barbearia"}
                 className="w-9 h-9 rounded-lg object-cover border border-accent/40 shadow-md shrink-0"
               />
             ) : (
-              <img
-                src="/favicon-32x32.png"
-                alt="MetricBarber"
-                className="w-9 h-9 rounded-lg object-contain shadow-lg shrink-0"
+              <LogoIcon
+                size="sm"
+                className="w-9 h-9 rounded-lg shadow-md shrink-0"
               />
             )}
             <div className="min-w-0">
@@ -215,14 +215,13 @@ export const TenantLayout: React.FC = () => {
                   {tenant?.logo_url ? (
                     <img
                       src={tenant.logo_url}
-                      alt={tenant.trade_name || "Barbearia"}
+                      alt={tenant.trade_name || tenant.name || "Barbearia"}
                       className="w-8 h-8 rounded-lg object-cover border border-accent/40 shrink-0"
                     />
                   ) : (
-                    <img
-                      src="/favicon-32x32.png"
-                      alt="MetricBarber"
-                      className="w-8 h-8 rounded-lg object-contain shrink-0"
+                    <LogoIcon
+                      size="sm"
+                      className="w-8 h-8 rounded-lg shrink-0"
                     />
                   )}
                   <div className="font-bold text-sm text-white truncate">

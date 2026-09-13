@@ -4,6 +4,7 @@ import { Building2, Mail, Lock, Phone, ArrowRight, Sparkles, Chrome, AlertCircle
 import { sanitizeSlug, validateSlugSyntax } from "@/lib/authRedirect";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { LogoIcon } from "@/components/common/Logo";
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -113,8 +114,8 @@ export const RegisterPage: React.FC = () => {
     <div className="auth-page min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
       <div className="auth-card w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-accent text-slate-950 font-black text-2xl flex items-center justify-center mx-auto mb-3 shadow-lg shadow-accent">
-            MB
+          <div className="flex justify-center mb-3">
+            <LogoIcon size="lg" className="w-14 h-14 shadow-lg shadow-orange-500/20" />
           </div>
           <h2 className="text-2xl font-black text-white">Criar Nova Barbearia</h2>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full surface-accent-soft text-accent text-xs font-bold mt-2 border border-accent">

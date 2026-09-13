@@ -18,11 +18,11 @@ export const ServicesPage: React.FC = () => {
   const [modalError, setModalError] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [editingService, setEditingService] = useState<any | null>(null);
-  const [form, setForm] = useState({ name: "", category: "Cabelo", price: "40.00", duration: "30", buffer: "5" });
+  const [form, setForm] = useState({ name: "", category: "Cabelo", price: "40.00", duration: "30", buffer: "0" });
 
   const openCreate = () => {
     setEditingService(null);
-    setForm({ name: "", category: "Cabelo", price: "40.00", duration: "30", buffer: "5" });
+    setForm({ name: "", category: "Cabelo", price: "40.00", duration: "30", buffer: "0" });
     setError(null);
     setModalError(null);
     setIsModalOpen(true);

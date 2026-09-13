@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
+import { LogoIcon } from "@/components/common/Logo";
 import {
   Scissors,
   Calendar,
@@ -93,6 +95,43 @@ const FICTITIOUS_SLOTS = {
 
 export const SimulationChat: React.FC = () => {
   const navigate = useNavigate();
+  const { tenant } = useAuth();
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tenant?.logo_url) {
+      setLogoUrl(tenant.logo_url);
+    } else {
+      try {
+        const active = localStorage.getItem("mb_active_tenant");
+        if (active) {
+          const parsed = JSON.parse(active);
+          if (parsed?.logo_url) setLogoUrl(parsed.logo_url);
+        }
+      } catch {}
+    }
+  }, [tenant?.logo_url]);
+
+  const renderBotAvatar = () => {
+    if (logoUrl) {
+      return (
+        <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-slate-700 bg-slate-800 shadow-sm flex items-center justify-center">
+          <img
+            src={logoUrl}
+            alt="Logo Barbearia"
+            className="w-full h-full object-cover"
+            onError={() => setLogoUrl(null)}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 shadow-sm border border-orange-500/30 flex items-center justify-center">
+        <LogoIcon size="xs" className="w-full h-full rounded-full object-cover shadow-none" alt="MBarber" />
+      </div>
+    );
+  };
 
   // Passos: 1 = Identificação, 2 = Serviço, 3 = Profissional, 4 = Data/Horário, 5 = Resumo, 6 = Sucesso
   const [step, setStep] = useState<number>(1);
@@ -205,9 +244,7 @@ export const SimulationChat: React.FC = () => {
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-accent text-slate-950 flex items-center justify-center font-black text-sm">
-                <Scissors className="w-4 h-4" />
-              </div>
+              <LogoIcon size="sm" className="w-8 h-8 rounded-lg" />
               <div>
                 <span className="font-extrabold text-sm text-white block">
                   Simulação de Agendamento
@@ -247,11 +284,15 @@ export const SimulationChat: React.FC = () => {
           {/* Top Mockup Header da Barbearia Demonstrativa */}
           <div className="flex items-center justify-between pb-4 border-b border-slate-800">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-accent text-slate-950 font-black text-base flex items-center justify-center shadow-md">
-                MB
+              <div className="w-10 h-10 rounded-full bg-accent text-slate-950 font-black text-base flex items-center justify-center shadow-md overflow-hidden shrink-0 border border-accent/40">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Logo Barbearia" className="w-full h-full object-cover" onError={() => setLogoUrl(null)} />
+                ) : (
+                  (tenant?.trade_name || tenant?.name || "MB").slice(0, 2).toUpperCase()
+                )}
               </div>
               <div>
-                <h2 className="font-bold text-base text-white">Barbearia Modelo MBarber</h2>
+                <h2 className="font-bold text-base text-white">{tenant?.trade_name || tenant?.name || "Barbearia Modelo MBarber"}</h2>
                 <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Chat Online (Modo Simulação)</span>
@@ -267,9 +308,7 @@ export const SimulationChat: React.FC = () => {
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <div className="flex gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                  ✂️
-                </div>
+                {renderBotAvatar()}
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3.5 text-xs sm:text-sm text-slate-200 leading-relaxed shadow max-w-[88%]">
                   Olá! Bem-vindo à barbearia. Para simularmos o agendamento, como você gostaria de se identificar?
                 </div>
@@ -335,9 +374,7 @@ export const SimulationChat: React.FC = () => {
           {step === 2 && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <div className="flex gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                  ✂️
-                </div>
+                {renderBotAvatar()}
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3.5 text-xs sm:text-sm text-slate-200 leading-relaxed shadow max-w-[88%]">
                   Prazer, <strong className="text-white">{customerName}</strong>! Qual serviço você deseja agendar hoje?
                 </div>
@@ -399,9 +436,7 @@ export const SimulationChat: React.FC = () => {
           {step === 3 && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <div className="flex gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                  ✂️
-                </div>
+                {renderBotAvatar()}
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3.5 text-xs sm:text-sm text-slate-200 leading-relaxed shadow max-w-[88%]">
                   Ótima escolha: <strong className="text-white">{selectedService?.name}</strong>! Você tem preferência por algum barbeiro?
                 </div>
@@ -455,9 +490,7 @@ export const SimulationChat: React.FC = () => {
           {step === 4 && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <div className="flex gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                  ✂️
-                </div>
+                {renderBotAvatar()}
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3.5 text-xs sm:text-sm text-slate-200 leading-relaxed shadow max-w-[88%]">
                   Agora escolha o melhor dia e horário para o atendimento:
                 </div>
@@ -572,9 +605,7 @@ export const SimulationChat: React.FC = () => {
           {step === 5 && (
             <div className="space-y-4 animate-in fade-in duration-200">
               <div className="flex gap-2.5">
-                <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                  ✂️
-                </div>
+                {renderBotAvatar()}
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3.5 text-xs sm:text-sm text-slate-200 leading-relaxed shadow max-w-[88%]">
                   Perfeito! Confira o resumo do agendamento antes de confirmar:
                 </div>
@@ -720,7 +751,7 @@ export const SimulationChat: React.FC = () => {
                   to="/auth/register"
                   className="w-full py-3.5 rounded-xl bg-accent hover-bg-accent text-slate-950 font-extrabold text-sm transition shadow-lg shadow-accent/20 flex items-center justify-center gap-2"
                 >
-                  <Scissors className="w-4 h-4" />
+                  <LogoIcon size="xs" className="w-4 h-4 rounded-md shadow-none" />
                   <span>Criar Minha Barbearia Grátis</span>
                 </Link>
 

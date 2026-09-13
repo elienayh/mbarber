@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useNotifications } from "@/contexts/NotificationContext";
 import { Scissors, X, Calendar, MessageCircle, Clock, CheckCircle2, Sparkles } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { LogoIcon } from "@/components/common/Logo";
 
 export const NotificationToast: React.FC = () => {
   const { activeToast, dismissToast, markAsRead } = useNotifications();
@@ -35,7 +36,7 @@ export const NotificationToast: React.FC = () => {
               <span className="relative inline-flex rounded-full h-3 w-3 bg-accent"></span>
             </span>
             <div className="flex items-center gap-1.5 font-bold text-sm text-accent">
-              <Scissors className="w-4 h-4" />
+              <LogoIcon size="xs" className="w-4 h-4 rounded-md shadow-none" />
               <span>Novo Agendamento!</span>
             </div>
           </div>

@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   ArrowLeft,
 } from "lucide-react";
+import { LogoIcon } from "@/components/common/Logo";
 
 export const AdminLayout: React.FC = () => {
   const location = useLocation();
@@ -29,8 +30,8 @@ export const AdminLayout: React.FC = () => {
       {/* Sidebar Admin */}
       <aside className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col">
         <div className="p-5 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-6 h-6 text-red-400" />
+          <div className="flex items-center gap-2.5">
+            <LogoIcon size="sm" className="w-8 h-8" />
             <div>
               <div className="font-bold text-sm tracking-wide text-white uppercase">SaaS Admin</div>
               <div className="text-xs text-slate-500">MetricBarber Platform</div>
