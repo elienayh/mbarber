@@ -11,14 +11,12 @@ Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (request.method !== 'POST') return response({ error: 'Method not allowed' }, 405);
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim();
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')?.trim();
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim();
-  const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')?.trim();
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
   if (!supabaseUrl || !anonKey || !serviceRoleKey || !stripeKey) {
-    return response({ 
-      error: 'As chaves do Stripe (STRIPE_SECRET_KEY) ou do Supabase não estão configuradas nas Secrets das Edge Functions do Supabase.' 
-    }, 500);
+    return response({ error: 'Stripe/Supabase secrets are not configured.' }, 500);
   }
 
   try {
@@ -33,14 +31,6 @@ Deno.serve(async (request) => {
     const tenantId = payload.tenant_id;
     if (!tenantId) return response({ error: 'tenant_id é obrigatório.' }, 400);
 
-    const { data: tenant } = await adminClient
-      .from('tenants')
-      .select('id, name, trade_name, email')
-      .eq('id', tenantId)
-      .single();
-
-    if (!tenant) return response({ error: 'Barbearia não encontrada.' }, 404);
-
     const { data: profile } = await adminClient.from('profiles').select('is_platform_admin').eq('id', userData.user.id).maybeSingle();
     const { data: membership } = await adminClient
       .from('tenant_users')
@@ -52,12 +42,6 @@ Deno.serve(async (request) => {
 
     const isAllowed = profile?.is_platform_admin || ['owner', 'admin'].includes(membership?.role);
     if (!isAllowed) {
-      const isTenantEmailMatch = Boolean(
-        tenant.email &&
-        userData.user.email &&
-        tenant.email.toLowerCase().trim() === userData.user.email.toLowerCase().trim()
-      );
-
       const { data: pro } = await adminClient
         .from('professionals')
         .select('id')
@@ -65,7 +49,7 @@ Deno.serve(async (request) => {
         .eq('user_id', userData.user.id)
         .maybeSingle();
 
-      if (pro || isTenantEmailMatch) {
+      if (pro) {
         await adminClient.from('tenant_users').upsert({
           tenant_id: tenantId,
           user_id: userData.user.id,

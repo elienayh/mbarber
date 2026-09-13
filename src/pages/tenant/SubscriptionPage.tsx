@@ -1,10 +1,9 @@
-import React, { useEffect, useState, useMemo, useRef } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import {
   CreditCard,
   CheckCircle2,
   AlertCircle,
-  AlertTriangle,
   Clock,
   Users,
   ShieldCheck,
@@ -49,11 +48,7 @@ export const SubscriptionPage: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
-  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
-  const errorRef = useRef<HTMLDivElement>(null);
 
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [plans, setPlans] = useState<PlanItem[]>([]);
@@ -65,15 +60,6 @@ export const SubscriptionPage: React.FC = () => {
 
   // Status de retorno do checkout via query param
   const checkoutStatus = searchParams.get("checkout");
-  const [verificationStatus, setVerificationStatus] = useState<"idle" | "checking" | "confirmed" | "unconfirmed">("idle");
-  const [verificationAttempts, setVerificationAttempts] = useState(0);
-
-  const showError = (msg: string) => {
-    setErrorMessage(msg);
-    setTimeout(() => {
-      errorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 100);
-  };
 
   const loadData = async () => {
     if (!tenant?.id) return;
@@ -135,74 +121,6 @@ export const SubscriptionPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [tenant?.id]);
-
-  // Verificação em tempo real no banco quando retorna com ?checkout=success
-  useEffect(() => {
-    if (checkoutStatus !== "success" || !tenant?.id) return;
-
-    let isMounted = true;
-    let attempts = 0;
-    const maxAttempts = 5;
-
-    setVerificationStatus("checking");
-
-    const checkSubscriptionInDatabase = async () => {
-      attempts++;
-      setVerificationAttempts(attempts);
-
-      try {
-        const { data } = await (supabase.from("subscriptions") as any)
-          .select(`
-            id,
-            tenant_id,
-            plan_id,
-            status,
-            current_period_start,
-            current_period_end,
-            cancel_at_period_end,
-            stripe_subscription_id,
-            plans (
-              id, name, slug, description, price_cents, billing_cycle, max_professionals, features, is_active
-            )
-          `)
-          .eq("tenant_id", tenant.id)
-          .eq("status", "active")
-          .maybeSingle();
-
-        if (data && data.stripe_subscription_id) {
-          if (isMounted) {
-            setSubscription(data);
-            setVerificationStatus("confirmed");
-            await loadData();
-          }
-          return;
-        }
-
-        if (attempts < maxAttempts) {
-          setTimeout(checkSubscriptionInDatabase, 2500);
-        } else {
-          if (isMounted) {
-            setVerificationStatus("unconfirmed");
-          }
-        }
-      } catch (err) {
-        console.error("Erro ao verificar assinatura no banco:", err);
-        if (attempts < maxAttempts) {
-          setTimeout(checkSubscriptionInDatabase, 2500);
-        } else {
-          if (isMounted) {
-            setVerificationStatus("unconfirmed");
-          }
-        }
-      }
-    };
-
-    checkSubscriptionInDatabase();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [checkoutStatus, tenant?.id]);
 
   // Constante comercial unificada: R$ 29,90 por profissional/mês (2990 centavos)
   const PRICE_PER_PROFESSIONAL_CENTS = 2990;
@@ -279,13 +197,7 @@ export const SubscriptionPage: React.FC = () => {
 
   // Iniciar checkout de assinatura proporcional (R$ 29,90 por profissional/mês)
   const handleStartSubscription = async (targetSlug = "solo", seatsCount?: number) => {
-    if (!tenant?.id) {
-      showError("Barbearia não identificada. Por favor, recarregue a página ou selecione a sua barbearia para continuar.");
-      return;
-    }
-
-    const actionKey = `start-${targetSlug}-${seatsCount || "default"}`;
-    setLoadingAction(actionKey);
+    if (!tenant?.id) return;
     setActionLoading(true);
     setErrorMessage(null);
 
@@ -304,40 +216,24 @@ export const SubscriptionPage: React.FC = () => {
       if (error || !data?.url) {
         const message = await extractFunctionErrorMessage(
           error,
-          "Não foi possível iniciar o checkout de pagamento. Verifique as credenciais do Stripe ou tente novamente."
+          "Não foi possível iniciar o pagamento. Verifique a conexão e tente novamente."
         );
-        showError(message);
+        setErrorMessage(message);
         return;
       }
 
-      setCheckoutUrl(data.url);
-
-      // Tratamento para iframe (preview do AI Studio / embed) e navegadores com bloqueio de popups
-      const isInIframe = window.self !== window.top;
-      if (isInIframe) {
-        const popup = window.open(data.url, "_blank", "noopener,noreferrer");
-        if (!popup || popup.closed || typeof popup.closed === "undefined") {
-          setIsCheckoutModalOpen(true);
-        }
-      } else {
-        window.location.href = data.url;
-      }
+      // Redireciona diretamente para a tela de pagamento seguro
+      window.location.href = data.url;
     } catch (err: any) {
-      showError(err?.message || "Ocorreu um erro inesperado ao processar o checkout.");
+      setErrorMessage(err?.message || "Ocorreu um erro ao processar o checkout.");
     } finally {
       setActionLoading(false);
-      setLoadingAction(null);
     }
   };
 
   // Abrir portal de gerenciamento de faturas e cartões
   const handleOpenBillingPortal = async () => {
-    if (!tenant?.id) {
-      showError("Barbearia não identificada. Por favor, recarregue a página.");
-      return;
-    }
-
-    setLoadingAction("portal");
+    if (!tenant?.id) return;
     setActionLoading(true);
     setErrorMessage(null);
 
@@ -354,25 +250,15 @@ export const SubscriptionPage: React.FC = () => {
           error,
           "Nenhuma assinatura ativa encontrada para gerenciar. Assine um plano para liberar essa função."
         );
-        showError(message);
+        setErrorMessage(message);
         return;
       }
 
-      setCheckoutUrl(data.url);
-      const isInIframe = window.self !== window.top;
-      if (isInIframe) {
-        const popup = window.open(data.url, "_blank", "noopener,noreferrer");
-        if (!popup || popup.closed || typeof popup.closed === "undefined") {
-          setIsCheckoutModalOpen(true);
-        }
-      } else {
-        window.location.href = data.url;
-      }
+      window.location.href = data.url;
     } catch (err: any) {
-      showError(err?.message || "Ocorreu um erro ao abrir o painel de faturas.");
+      setErrorMessage(err?.message || "Ocorreu um erro ao abrir o painel de faturas.");
     } finally {
       setActionLoading(false);
-      setLoadingAction(null);
     }
   };
 
@@ -383,83 +269,25 @@ export const SubscriptionPage: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* Alerta de Retorno do Checkout com Validação Real no Banco */}
+      {/* Alerta de Retorno do Checkout */}
       {checkoutStatus === "success" && (
-        <>
-          {verificationStatus === "checking" && (
-            <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200 text-sky-950 flex items-start justify-between gap-3 shadow-sm animate-pulse">
-              <div className="flex items-center gap-3">
-                <RefreshCw className="w-5 h-5 text-sky-600 animate-spin shrink-0" />
-                <div>
-                  <h4 className="font-bold text-sm">Verificando confirmação do pagamento...</h4>
-                  <p className="text-xs text-sky-700 mt-0.5">
-                    Aguardando a confirmação oficial do webhook do Stripe no banco de dados (tentativa {verificationAttempts} de 5)...
-                  </p>
-                </div>
-              </div>
+        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-start justify-between gap-3 shadow-sm animate-fade-in">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <div>
+              <h4 className="font-bold text-sm">Assinatura realizada com sucesso!</h4>
+              <p className="text-xs text-emerald-700 mt-0.5">
+                Obrigado por assinar o MetricBarber. O status do seu plano foi atualizado e seus recursos estão liberados.
+              </p>
             </div>
-          )}
-
-          {verificationStatus === "confirmed" && (
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-start justify-between gap-3 shadow-sm animate-fade-in">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                <div>
-                  <h4 className="font-bold text-sm">Assinatura confirmada e ativa!</h4>
-                  <p className="text-xs text-emerald-700 mt-0.5">
-                    O pagamento foi recebido pelo Stripe, processado via webhook e a barbearia está ativa no plano contratado.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={clearQueryStatus}
-                className="text-emerald-700 hover:text-emerald-900 text-xs font-semibold p-1"
-                title="Fechar aviso"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          {verificationStatus === "unconfirmed" && (
-            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 flex items-start justify-between gap-3 shadow-sm">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <h4 className="font-bold text-sm">Aguardando confirmação do pagamento pelo Stripe</h4>
-                  <p className="text-xs text-amber-800 leading-relaxed">
-                    O retorno da página de checkout foi identificado, mas o webhook do Stripe ainda não registrou uma assinatura ativa para esta barbearia no banco de dados. Se você completou o pagamento, pode levar até 2 minutos para o webhook ser entregue. Se você fechou o Stripe antes de digitar os dados do cartão, a cobrança não foi realizada.
-                  </p>
-                  <div className="pt-1 flex items-center gap-3">
-                    <button
-                      onClick={() => {
-                        setVerificationAttempts(0);
-                        setVerificationStatus("checking");
-                        loadData();
-                      }}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-amber-900 bg-amber-200/80 hover:bg-amber-300 px-3 py-1 rounded-lg transition"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Verificar novamente</span>
-                    </button>
-                    <button
-                      onClick={clearQueryStatus}
-                      className="text-xs text-amber-800 underline hover:text-amber-950"
-                    >
-                      Dispensar aviso
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={clearQueryStatus}
-                className="text-amber-800 hover:text-amber-950 text-xs font-semibold p-1"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </>
+          </div>
+          <button
+            onClick={clearQueryStatus}
+            className="text-emerald-700 hover:text-emerald-900 text-xs font-semibold p-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
 
       {checkoutStatus === "cancelled" && (
@@ -505,38 +333,16 @@ export const SubscriptionPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Mensagem de Erro Geral com Guia de Solução */}
+      {/* Mensagem de Erro Geral */}
       {errorMessage && (
-        <div ref={errorRef} className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs space-y-3 shadow-sm">
-          <div className="flex items-start justify-between gap-2.5">
-            <div className="flex items-start gap-2.5">
-              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-              <div>
-                <h4 className="font-bold text-sm text-rose-900">Atenção ao conectar com Stripe</h4>
-                <p className="font-semibold text-rose-700 mt-0.5">{errorMessage}</p>
-              </div>
-            </div>
-            <button onClick={() => setErrorMessage(null)} className="text-rose-400 hover:text-rose-700 p-1">
-              <X className="w-4 h-4" />
-            </button>
+        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold">{errorMessage}</p>
           </div>
-
-          {(errorMessage.toLowerCase().includes("secrets") || 
-            errorMessage.toLowerCase().includes("stripe_secret_key") || 
-            errorMessage.toLowerCase().includes("não estão configuradas")) && (
-            <div className="p-3.5 bg-white rounded-xl border border-rose-100 text-slate-700 text-xs space-y-2">
-              <p className="font-bold text-slate-900 flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                Como concluir a configuração no Supabase:
-              </p>
-              <ol className="list-decimal list-inside space-y-1 text-slate-600 leading-relaxed">
-                <li>Abra o painel do seu projeto no Supabase (<strong>Project Settings &gt; Edge Functions &gt; Secrets</strong>).</li>
-                <li>Adicione a Secret <code>STRIPE_SECRET_KEY</code> com a sua chave secreta da Stripe (ex: <code>sk_live_...</code> ou <code>sk_test_...</code>).</li>
-                <li>Adicione a Secret <code>STRIPE_WEBHOOK_SECRET</code> com o segredo do webhook (ex: <code>whsec_...</code>).</li>
-                <li>Recarregue esta página e clique novamente em Assinar.</li>
-              </ol>
-            </div>
-          )}
+          <button onClick={() => setErrorMessage(null)} className="text-rose-600 hover:text-rose-800">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
@@ -636,6 +442,38 @@ export const SubscriptionPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Barra de Progresso de Profissionais */}
+        <div className="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-600 bg-white">
+          <div className="flex-1 max-w-md">
+            <div className="flex justify-between mb-1 text-[11px] font-semibold text-slate-700">
+              <span>Capacidade da Equipe</span>
+              <span>
+                {Math.min(100, Math.round((activeProfessionalsCount / (maxAllowedProfessionals || 1)) * 100))}% utilizado
+              </span>
+            </div>
+            <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  activeProfessionalsCount >= maxAllowedProfessionals ? "bg-amber-500" : "bg-emerald-500"
+                }`}
+                style={{
+                  width: `${Math.min(100, Math.max(5, (activeProfessionalsCount / (maxAllowedProfessionals || 1)) * 100))}%`,
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="text-slate-500 text-[11px]">
+            {activeProfessionalsCount >= maxAllowedProfessionals ? (
+              <span className="text-amber-700 font-semibold">
+                Você atingiu o limite de barbeiros do plano. Adicione outro barbeiro para contratar mais profissionais.
+              </span>
+            ) : (
+              <span>Você pode cadastrar mais {maxAllowedProfessionals - activeProfessionalsCount} profissional(is).</span>
+            )}
+          </div>
+        </div>
+
         {/* Barra de Ações Rápidas */}
         <div className="p-6 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -661,31 +499,19 @@ export const SubscriptionPage: React.FC = () => {
                   disabled={actionLoading}
                   className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-sm hover:bg-white transition flex items-center gap-2 disabled:opacity-50"
                 >
-                  {loadingAction === "portal" ? (
-                    <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
-                  ) : (
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-                  )}
-                  <span>{loadingAction === "portal" ? "Abrindo portal..." : "Gerenciar assinatura"}</span>
+                  <span>{actionLoading ? "Carregando..." : "Gerenciar assinatura"}</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
                 </button>
               </>
             ) : (
               <button
                 type="button"
-                onClick={() => {
-                  const defaultSlug = activeProfessionalsCount > 2 ? "enterprise" : activeProfessionalsCount === 2 ? "pro" : "solo";
-                  const defaultSeats = Math.max(1, activeProfessionalsCount || 1);
-                  handleStartSubscription(defaultSlug, defaultSeats);
-                }}
+                onClick={() => handleStartSubscription("pro")}
                 disabled={actionLoading}
                 className="px-6 py-2.5 rounded-xl bg-accent hover-bg-accent text-slate-950 font-bold text-sm transition flex items-center gap-2 shadow-md shadow-accent/20 disabled:opacity-50"
               >
-                {loadingAction?.startsWith("start-") ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Sparkles className="w-4 h-4" />
-                )}
-                <span>{loadingAction?.startsWith("start-") ? "Iniciando Stripe..." : "Assinar plano"}</span>
+                <Sparkles className="w-4 h-4" />
+                <span>{actionLoading ? "Processando..." : "Assinar plano"}</span>
               </button>
             )}
           </div>
@@ -713,7 +539,6 @@ export const SubscriptionPage: React.FC = () => {
             const isCurrent = (currentPlan?.slug === p.slug || maxAllowedProfessionals === seats) && subscription?.status === "active";
             const isPopular = p.slug === "pro" || seats === 2;
             const priceCents = seats * PRICE_PER_PROFESSIONAL_CENTS;
-            const isThisLoading = loadingAction === `start-${p.slug}-${seats}`;
 
             return (
               <div
@@ -784,34 +609,22 @@ export const SubscriptionPage: React.FC = () => {
                       type="button"
                       onClick={handleOpenBillingPortal}
                       disabled={actionLoading}
-                      className="w-full py-2.5 rounded-xl border border-emerald-300 text-emerald-800 font-bold text-xs hover:bg-emerald-50 transition flex items-center justify-center gap-2"
+                      className="w-full py-2.5 rounded-xl border border-emerald-300 text-emerald-800 font-bold text-xs hover:bg-emerald-50 transition"
                     >
-                      {loadingAction === "portal" ? (
-                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      ) : null}
-                      <span>Plano Ativo • Ver Faturas</span>
+                      Plano Ativo • Ver Faturas
                     </button>
                   ) : (
                     <button
                       type="button"
                       onClick={() => handleStartSubscription(p.slug, seats)}
                       disabled={actionLoading}
-                      className={`w-full py-2.5 rounded-xl font-bold text-xs transition shadow-sm flex items-center justify-center gap-2 ${
+                      className={`w-full py-2.5 rounded-xl font-bold text-xs transition shadow-sm ${
                         isPopular
                           ? "bg-accent hover-bg-accent text-slate-950"
                           : "bg-slate-900 hover:bg-slate-800 text-white"
                       } disabled:opacity-50`}
                     >
-                      {isThisLoading ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Conectando ao Stripe...</span>
-                        </>
-                      ) : subscription?.status === "active" ? (
-                        "Mudar para este plano"
-                      ) : (
-                        `Assinar (${formatCurrency(priceCents)}/mês)`
-                      )}
+                      {actionLoading ? "Carregando..." : subscription?.status === "active" ? "Mudar para este plano" : `Assinar (${formatCurrency(priceCents)}/mês)`}
                     </button>
                   )}
                 </div>
@@ -971,41 +784,6 @@ export const SubscriptionPage: React.FC = () => {
               >
                 <Plus className="w-4 h-4" />
                 <span>Confirmar e Contratar ({formatCurrency(targetBarberCount * PRICE_PER_PROFESSIONAL_CENTS)}/mês)</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* MODAL DE REDIRECIONAMENTO STRIPE (QUANDO POPUP É BLOQUEADO OU EM PREVIEW) */}
-      {isCheckoutModalOpen && checkoutUrl && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl border border-slate-200 text-center space-y-4 animate-fade-in">
-            <div className="w-12 h-12 rounded-2xl bg-accent/20 text-accent flex items-center justify-center mx-auto">
-              <CreditCard className="w-6 h-6 text-slate-900" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Sessão Stripe Pronta</h3>
-              <p className="text-xs text-slate-600 mt-1">
-                A página de pagamento seguro do Stripe foi gerada com sucesso. Clique no botão abaixo para concluir sua assinatura:
-              </p>
-            </div>
-            <div className="pt-2 flex flex-col gap-2">
-              <a
-                href={checkoutUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => setIsCheckoutModalOpen(false)}
-                className="w-full py-3 rounded-xl bg-accent hover:opacity-90 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-accent/20 transition"
-              >
-                <span>Ir para Pagamento no Stripe</span>
-                <ExternalLink className="w-4 h-4" />
-              </a>
-              <button
-                type="button"
-                onClick={() => setIsCheckoutModalOpen(false)}
-                className="w-full py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-xs hover:bg-slate-50 transition"
-              >
-                Fechar
               </button>
             </div>
           </div>

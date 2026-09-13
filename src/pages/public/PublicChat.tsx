@@ -153,21 +153,7 @@ export const PublicChat: React.FC = () => {
 
       setTenant(dbTenant as TenantInfo);
       setServices(realServices);
-
-      // Disponibilizar "Qualquer Barbeiro Disponível" apenas se existirem profissionais reais
-      if (realProfessionals.length > 0) {
-        setProfessionals([
-          {
-            id: "any",
-            name: "Qualquer Barbeiro Disponível",
-            nickname: "Primeiro horário livre",
-            color_hex: dbTenant.primary_color || "var(--accent)",
-          },
-          ...realProfessionals,
-        ]);
-      } else {
-        setProfessionals([]);
-      }
+      setProfessionals(realProfessionals);
 
       setLoading(false);
     };
@@ -641,18 +627,9 @@ export const PublicChat: React.FC = () => {
             <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
               ✂️
             </div>
-            <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3 text-sm text-slate-200 space-y-2 max-w-[85%] shadow">
+            <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3 text-sm text-slate-200 max-w-[85%] shadow">
               <p>
                 Olá! Seja bem-vindo à <strong>{tenant.trade_name || tenant.name}</strong>.
-              </p>
-              {tenantAddress && (
-                <p className="text-xs text-slate-400 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 shrink-0 text-accent" />
-                  {tenantAddress}
-                </p>
-              )}
-              <p className="text-xs text-slate-300">
-                Para começar seu agendamento, digite seu <strong>WhatsApp com DDD</strong> abaixo. Se você já cortou com a gente, localizaremos seu cadastro na hora!
               </p>
             </div>
           </div>
@@ -828,30 +805,17 @@ export const PublicChat: React.FC = () => {
                 </div>
               )}
 
-              {/* Mensagem do Chat quando NÃO Encontra (Novo Cliente) */}
+              {/* Formulário para Novo Cliente (Direto para o Nome) */}
               {lookupAttempted && customerFound === false && (
                 <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                  <div className="flex gap-2">
-                    <div className="w-7 h-7 rounded-full bg-accent text-slate-950 font-bold text-xs flex items-center justify-center shrink-0">
-                      ✂️
-                    </div>
-                    <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3.5 text-sm text-slate-200 space-y-1.5 max-w-[88%] shadow border border-slate-700">
-                      <p className="leading-relaxed">
-                        Não encontramos agendamentos anteriores para o número <strong>{formatPhone(customerPhone)}</strong>.
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        Como podemos te chamar?
-                      </p>
-                    </div>
-                  </div>
-
                   <div className="rounded-2xl border border-slate-700 bg-slate-800/90 p-4 space-y-3 shadow-xl">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Seu Nome Completo:
+                      <label className="block text-xs font-semibold text-slate-200 mb-1.5">
+                        Como devo te chamar?
                       </label>
                       <input
                         type="text"
+                        autoFocus
                         value={nameInput}
                         onChange={(e) => setNameInput(e.target.value)}
                         onKeyDown={(e) => {
@@ -860,7 +824,7 @@ export const PublicChat: React.FC = () => {
                             confirmCustomName();
                           }
                         }}
-                        placeholder="Ex: Carlos Eduardo"
+                        placeholder="Seu nome (ex: Carlos Eduardo)"
                         className="w-full rounded-xl bg-slate-900 border border-slate-700 px-4 py-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 transition"
                       />
                     </div>
@@ -869,7 +833,7 @@ export const PublicChat: React.FC = () => {
                       type="button"
                       onClick={confirmCustomName}
                       disabled={nameInput.trim().length < 2}
-                      className="w-full py-3.5 px-4 rounded-xl bg-accent hover-bg-accent text-slate-950 font-bold text-sm transition shadow-lg shadow-accent/20 flex items-center justify-center gap-2 disabled:opacity-50"
+                      className="w-full py-3.5 px-4 rounded-xl bg-accent hover-bg-accent text-slate-950 font-bold text-sm transition shadow-lg shadow-accent/20 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                     >
                       <span>Continuar e Escolher Serviço</span>
                       <ChevronRight className="w-4 h-4" />
@@ -879,7 +843,7 @@ export const PublicChat: React.FC = () => {
                       <button
                         type="button"
                         onClick={resetPhoneLookup}
-                        className="text-xs text-slate-400 hover:text-white transition"
+                        className="text-xs text-slate-400 hover:text-white transition cursor-pointer"
                       >
                         ← Digitar outro número de WhatsApp
                       </button>
@@ -939,58 +903,62 @@ export const PublicChat: React.FC = () => {
                   ✂️
                 </div>
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3 text-sm text-slate-200 max-w-[85%] shadow">
-                  Escolha o profissional ou deixe o sistema indicar quem está disponível.
+                  Escolha o profissional que irá te atender:
                 </div>
               </div>
               <div className="space-y-2.5 pt-1">
-                {professionals.map((prof) => (
-                  <button
-                    key={prof.id}
-                    onClick={() => {
-                      setSelectedProfessional(prof);
-                      if (!selectedDate && dateOptions.length > 0) {
-                        setSelectedDate(dateOptions[0].dateString);
-                      }
-                      setSelectedTime("");
-                      setStep(4);
-                    }}
-                    className="w-full p-3 rounded-2xl border border-slate-700 bg-slate-800/70 text-left hover:border-accent hover:bg-slate-800 transition flex items-center justify-between group shadow-sm"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-12 h-12 rounded-full overflow-hidden shrink-0 border-2 flex items-center justify-center font-black text-white text-sm shadow transition group-hover:scale-105"
-                        style={{
-                          borderColor: prof.color_hex || "var(--accent)",
-                          backgroundColor: prof.color_hex || "var(--accent)",
-                        }}
-                      >
-                        {prof.avatar_url ? (
-                          <img src={prof.avatar_url} alt={prof.name} className="w-full h-full object-cover" />
-                        ) : prof.id === "any" ? (
-                          <span className="text-lg">✨</span>
-                        ) : (
-                          prof.name.slice(0, 2).toUpperCase()
-                        )}
-                      </div>
-
-                      <div>
-                        <div className="font-bold text-white text-sm group-hover:text-accent transition">
-                          {prof.name}
+                {professionals.length === 0 ? (
+                  <div className="p-4 rounded-2xl border border-slate-700 bg-slate-800/60 text-center text-slate-400 text-sm">
+                    Nenhum profissional disponível no momento. Entre em contato com a barbearia.
+                  </div>
+                ) : (
+                  professionals.map((prof) => (
+                    <button
+                      key={prof.id}
+                      onClick={() => {
+                        setSelectedProfessional(prof);
+                        if (!selectedDate && dateOptions.length > 0) {
+                          setSelectedDate(dateOptions[0].dateString);
+                        }
+                        setSelectedTime("");
+                        setStep(4);
+                      }}
+                      className="w-full p-3 rounded-2xl border border-slate-700 bg-slate-800/70 text-left hover:border-accent hover:bg-slate-800 transition flex items-center justify-between group shadow-sm cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-12 h-12 rounded-full overflow-hidden shrink-0 border-2 flex items-center justify-center font-black text-white text-sm shadow transition group-hover:scale-105"
+                          style={{
+                            borderColor: prof.color_hex || "var(--accent)",
+                            backgroundColor: prof.color_hex || "var(--accent)",
+                          }}
+                        >
+                          {prof.avatar_url ? (
+                            <img src={prof.avatar_url} alt={prof.name} className="w-full h-full object-cover" />
+                          ) : (
+                            prof.name.slice(0, 2).toUpperCase()
+                          )}
                         </div>
-                        {prof.nickname && <div className="text-xs text-slate-400 mt-0.5">{prof.nickname}</div>}
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-2.5 h-2.5 rounded-full"
-                        style={{ backgroundColor: prof.color_hex || "var(--accent)" }}
-                        title="Cor de identificação"
-                      />
-                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-accent transition" />
-                    </div>
-                  </button>
-                ))}
+                        <div>
+                          <div className="font-bold text-white text-sm group-hover:text-accent transition">
+                            {prof.name}
+                          </div>
+                          {prof.nickname && <div className="text-xs text-slate-400 mt-0.5">{prof.nickname}</div>}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{ backgroundColor: prof.color_hex || "var(--accent)" }}
+                          title="Cor de identificação"
+                        />
+                        <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-accent transition" />
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
             </>
           )}
@@ -1006,18 +974,40 @@ export const PublicChat: React.FC = () => {
                 </div>
               </div>
 
-              {/* Mini resumo do serviço e profissional escolhidos */}
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs">
-                <div className="flex items-center gap-1.5 truncate max-w-[55%]">
-                  <span className="text-slate-400">Serviço:</span>
-                  <span className="font-semibold text-white truncate">{selectedService?.name}</span>
+              {/* Mini resumo do serviço e profissional escolhidos com botão Trocar */}
+              <div className="p-3 rounded-2xl bg-slate-800/90 border border-slate-700/70 text-xs shadow-md space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 truncate min-w-0">
+                    <span className="text-slate-400">Serviço:</span>
+                    <span className="font-bold text-white truncate">{selectedService?.name}</span>
+                  </div>
+                  {selectedService && (
+                    <span className="text-accent font-bold shrink-0">
+                      {formatCurrency(selectedService.price_cents)}
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-1.5 truncate max-w-[45%]">
-                  <div
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: selectedProfessional.color_hex || "var(--accent)" }}
-                  />
-                  <span className="text-slate-300 font-medium truncate">{selectedProfessional.name}</span>
+
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-700/60">
+                  <div className="flex items-center gap-2 truncate min-w-0">
+                    <span className="text-slate-400">Profissional:</span>
+                    <div
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: selectedProfessional.color_hex || "var(--accent)" }}
+                    />
+                    <span className="text-slate-200 font-semibold truncate">{selectedProfessional.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTime("");
+                      setStep(3);
+                    }}
+                    className="shrink-0 px-2.5 py-1 rounded-lg bg-slate-700/80 hover:bg-slate-700 text-accent font-semibold text-xs border border-slate-600/70 hover:border-accent/40 transition flex items-center gap-1 cursor-pointer"
+                    title="Trocar de profissional mantendo o serviço escolhido"
+                  >
+                    <span>Trocar</span>
+                  </button>
                 </div>
               </div>
 
@@ -1096,11 +1086,23 @@ export const PublicChat: React.FC = () => {
                   )}
 
                   {!slotsLoading && !slotsErrorMessage && availableSlots.length === 0 && (
-                    <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/10 text-center text-xs text-amber-300 space-y-1">
+                    <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/10 text-center text-xs text-amber-300 space-y-2.5">
                       <p className="font-semibold">Nenhum horário livre nesta data.</p>
                       <p className="text-[11px] text-slate-400">
-                        O barbeiro pode estar de folga ou com a agenda lotada. Toque em outro dia acima para consultar.
+                        O barbeiro pode estar de folga ou com a agenda lotada. Você pode tentar outro dia ou escolher outro barbeiro.
                       </p>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedTime("");
+                            setStep(3);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-750 text-accent text-xs font-semibold border border-slate-700 hover:border-accent/40 transition inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          Trocar de barbeiro
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -1261,7 +1263,7 @@ export const PublicChat: React.FC = () => {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">Profissional:</span>
-                    <strong className="text-white">{selectedProfessional?.name || "Qualquer Barbeiro"}</strong>
+                    <strong className="text-white">{selectedProfessional?.name || "Profissional Selecionado"}</strong>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">Data e Horário:</span>

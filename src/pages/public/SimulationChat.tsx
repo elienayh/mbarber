@@ -66,12 +66,6 @@ const FICTITIOUS_SERVICES: ServiceOption[] = [
 
 const FICTITIOUS_BARBERS: BarberOption[] = [
   {
-    id: "any",
-    name: "Qualquer Barbeiro Disponível",
-    specialty: "Primeiro horário livre com qualquer profissional",
-    avatarText: "⚡",
-  },
-  {
     id: "barb_1",
     name: "Marcos 'Navalha' Silva",
     specialty: "Especialista em Degradê e Freestyle",
@@ -465,8 +459,37 @@ export const SimulationChat: React.FC = () => {
                   ✂️
                 </div>
                 <div className="bg-slate-800 rounded-2xl rounded-tl-none p-3.5 text-xs sm:text-sm text-slate-200 leading-relaxed shadow max-w-[88%]">
-                  Agora escolha o melhor dia e horário para o atendimento com{" "}
-                  <strong className="text-white">{selectedBarber?.name}</strong>:
+                  Agora escolha o melhor dia e horário para o atendimento:
+                </div>
+              </div>
+
+              {/* Mini resumo do serviço e profissional com botão Trocar */}
+              <div className="p-3 rounded-2xl bg-slate-800/90 border border-slate-700/70 text-xs shadow-md space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 truncate min-w-0">
+                    <span className="text-slate-400">Serviço:</span>
+                    <span className="font-bold text-white truncate">{selectedService?.name}</span>
+                  </div>
+                  {selectedService && (
+                    <span className="text-accent font-bold shrink-0">
+                      {formatCurrency(selectedService.priceCents)}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-700/60">
+                  <div className="flex items-center gap-2 truncate min-w-0">
+                    <span className="text-slate-400">Profissional:</span>
+                    <span className="text-slate-200 font-semibold truncate">{selectedBarber?.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setStep(3)}
+                    className="shrink-0 px-2.5 py-1 rounded-lg bg-slate-700/80 hover:bg-slate-700 text-accent font-semibold text-xs border border-slate-600/70 hover:border-accent/40 transition flex items-center gap-1 cursor-pointer"
+                    title="Trocar de barbeiro mantendo o serviço escolhido"
+                  >
+                    <span>Trocar</span>
+                  </button>
                 </div>
               </div>
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   UserCheck,
@@ -23,9 +23,6 @@ import {
   Clock,
   Coffee,
   Calendar,
-  ShieldAlert,
-  AlertTriangle,
-  ArrowRight,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -113,32 +110,9 @@ export const ProfessionalsPage: React.FC = () => {
   const [permissions, setPermissions] = useState<ProfessionalPermissions>(DEFAULT_PERMISSIONS);
   const [workSchedule, setWorkSchedule] = useState<WorkSchedule>(DEFAULT_WORK_SCHEDULE);
 
-  const [planLimit, setPlanLimit] = useState<{
-    maxAllowed: number;
-    planName: string;
-    planSlug: string;
-  }>({
-    maxAllowed: 1,
-    planName: "Plano Solo (1 profissional)",
-    planSlug: "solo",
-  });
-  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
-
-  const activeProfessionalsCount = useMemo(() => {
-    return professionals.filter((p) => p.is_active !== false).length;
-  }, [professionals]);
-
-  const isLimitReached = useMemo(() => {
-    return activeProfessionalsCount >= planLimit.maxAllowed;
-  }, [activeProfessionalsCount, planLimit.maxAllowed]);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const openCreate = () => {
-    if (isLimitReached) {
-      setIsLimitModalOpen(true);
-      return;
-    }
     setEditingProfessional(null);
     setForm({ name: "", nickname: "", phone: "", email: "", commission: "50", color: "#F28322" });
     setAvatarUrl(null);
@@ -346,17 +320,6 @@ export const ProfessionalsPage: React.FC = () => {
       return;
     }
 
-    // Se for cadastro novo e o limite de profissionais foi atingido, bloqueia
-    if (!editingProfessional && isLimitReached) {
-      setModalError(
-        `Limite de profissionais atingido: seu plano atual (${planLimit.planName}) permite no máximo ${planLimit.maxAllowed} profissional(is) ativo(s). Faça upgrade na aba Assinatura para contratar mais profissionais.`
-      );
-      setSaving(false);
-      setIsModalOpen(false);
-      setIsLimitModalOpen(true);
-      return;
-    }
-
     setSaving(true);
     setModalError(null);
     setError(null);
@@ -396,23 +359,6 @@ export const ProfessionalsPage: React.FC = () => {
 
       let { data, error: saveError } = await query;
 
-      // Se o backend rejeitou por causa do limite de plano (trigger trg_check_professional_plan_limit)
-      if (saveError) {
-        const errMsg = saveError.message || "";
-        const isLimitErr =
-          saveError.code === "P0001" ||
-          errMsg.toLowerCase().includes("limite de profissionais") ||
-          errMsg.toLowerCase().includes("plano atingido");
-
-        if (isLimitErr) {
-          setModalError(errMsg);
-          setSaving(false);
-          setIsModalOpen(false);
-          setIsLimitModalOpen(true);
-          return;
-        }
-      }
-
       // Se falhou por causa da coluna avatar_url, tenta salvar sem avatar_url no banco e mantém local
       if (saveError && saveError.message?.includes("avatar_url")) {
         const { avatar_url, ...payloadWithoutAvatar } = payload;
@@ -430,22 +376,6 @@ export const ProfessionalsPage: React.FC = () => {
         const retryResult = await retryQuery;
         data = retryResult.data;
         saveError = retryResult.error;
-
-        if (saveError) {
-          const errMsg = saveError.message || "";
-          const isLimitErr =
-            saveError.code === "P0001" ||
-            errMsg.toLowerCase().includes("limite de profissionais") ||
-            errMsg.toLowerCase().includes("plano atingido");
-
-          if (isLimitErr) {
-            setModalError(errMsg);
-            setSaving(false);
-            setIsModalOpen(false);
-            setIsLimitModalOpen(true);
-            return;
-          }
-        }
       }
 
       if (!saveError && data) {
@@ -454,55 +384,34 @@ export const ProfessionalsPage: React.FC = () => {
           avatar_url: avatarUrl || data.avatar_url || null,
         };
 
-        // Salva vínculo de serviços no Supabase apenas se tiverem sido alterados
-        const initialServiceIds: string[] = (editingProfessional?.professional_services || []).map((item: any) => item.service_id);
-        const servicesChanged =
-          !editingProfessional ||
-          initialServiceIds.length !== selectedServiceIds.length ||
-          !initialServiceIds.every((id) => selectedServiceIds.includes(id));
+        // Salva vínculo de serviços no Supabase sem quebrar se RLS bloquear
+        try {
+          await (supabase.from("professional_services") as any)
+            .delete()
+            .eq("tenant_id", tenant.id)
+            .eq("professional_id", data.id);
 
-        if (servicesChanged) {
-          try {
-            await (supabase.from("professional_services") as any)
-              .delete()
-              .eq("tenant_id", tenant.id)
-              .eq("professional_id", data.id);
-
-            if (selectedServiceIds.length > 0) {
-              await (supabase.from("professional_services") as any).insert(
-                selectedServiceIds.map((serviceId) => ({
-                  tenant_id: tenant.id,
-                  professional_id: data.id,
-                  service_id: serviceId,
-                }))
-              );
-            }
-          } catch (servErr) {
-            console.warn("Vínculo de serviços Supabase RLS:", servErr);
+          if (selectedServiceIds.length > 0) {
+            await (supabase.from("professional_services") as any).insert(
+              selectedServiceIds.map((serviceId) => ({
+                tenant_id: tenant.id,
+                professional_id: data.id,
+                service_id: serviceId,
+              }))
+            );
           }
+        } catch (servErr) {
+          console.warn("Vínculo de serviços Supabase RLS:", servErr);
         }
       } else {
         console.warn("Supabase profissionais save error:", saveError);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.warn("Exceção ao salvar profissional no Supabase:", err);
-      if (err?.message?.toLowerCase().includes("limite de profissionais")) {
-        setModalError(err.message);
-        setSaving(false);
-        setIsModalOpen(false);
-        setIsLimitModalOpen(true);
-        return;
-      }
     }
 
     // 2. Fallback resiliente: se Supabase bloqueou por RLS ou rede, cria com ID local
     if (!savedData) {
-      if (!editingProfessional && isLimitReached) {
-        setSaving(false);
-        setIsModalOpen(false);
-        setIsLimitModalOpen(true);
-        return;
-      }
       savedData = {
         id: editingProfessional?.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `pro_${Date.now()}`),
         ...payload,
@@ -559,40 +468,13 @@ export const ProfessionalsPage: React.FC = () => {
   const toggleProfessional = async (professional: any) => {
     if (!tenant?.id) return;
     const newStatus = !professional.is_active;
-
-    // Se estiver ativando um profissional e o limite já foi atingido, bloqueia
-    if (newStatus && isLimitReached) {
-      setError(`Não é possível reativar ${professional.name}: o limite de ${planLimit.maxAllowed} profissional(is) do seu plano já foi atingido. Faça upgrade na aba Assinatura para reativá-lo.`);
-      setIsLimitModalOpen(true);
-      return;
-    }
-
     try {
-      const { error: toggleError } = await (supabase.from("professionals") as any)
+      await (supabase.from("professionals") as any)
         .update({ is_active: newStatus })
         .eq("id", professional.id)
         .eq("tenant_id", tenant.id);
-
-      if (toggleError) {
-        const isLimitErr =
-          toggleError.code === "P0001" ||
-          toggleError.message?.toLowerCase().includes("limite de profissionais") ||
-          toggleError.message?.toLowerCase().includes("plano atingido");
-
-        if (isLimitErr) {
-          setError(toggleError.message);
-          setIsLimitModalOpen(true);
-          return;
-        }
-        console.warn("Erro ao alternar status do profissional no Supabase:", toggleError);
-      }
-    } catch (e: any) {
+    } catch (e) {
       console.warn("Erro ao alternar status do profissional no Supabase:", e);
-      if (e?.message?.toLowerCase().includes("limite de profissionais")) {
-        setError(e.message);
-        setIsLimitModalOpen(true);
-        return;
-      }
     }
 
     setProfessionals((current) => {
@@ -624,7 +506,7 @@ export const ProfessionalsPage: React.FC = () => {
       let remoteServices: ServiceItem[] = [];
 
       try {
-        const [{ data: proData }, { data: servicesData }, { data: subData }] = await Promise.all([
+        const [{ data: proData }, { data: servicesData }] = await Promise.all([
           (supabase.from("professionals") as any)
             .select("id, name, nickname, phone, email, user_id, commission_rate, color_hex, is_active, professional_services(service_id)")
             .eq("tenant_id", tenant.id)
@@ -634,34 +516,10 @@ export const ProfessionalsPage: React.FC = () => {
             .eq("tenant_id", tenant.id)
             .eq("is_active", true)
             .order("name"),
-          (supabase.from("subscriptions") as any)
-            .select("id, status, plan_id, plans(id, name, slug, max_professionals)")
-            .eq("tenant_id", tenant.id)
-            .maybeSingle(),
         ]);
 
         if (proData) remotePros = proData;
         if (servicesData) remoteServices = servicesData;
-
-        if (subData?.plans && ["active", "trialing"].includes(subData.status)) {
-          setPlanLimit({
-            maxAllowed: subData.plans.max_professionals || 1,
-            planName: subData.plans.name || "Plano Contratado",
-            planSlug: subData.plans.slug || "pro",
-          });
-        } else if (subData?.plans) {
-          setPlanLimit({
-            maxAllowed: subData.plans.max_professionals || 1,
-            planName: `${subData.plans.name} (${subData.status})`,
-            planSlug: subData.plans.slug || "solo",
-          });
-        } else {
-          setPlanLimit({
-            maxAllowed: 1,
-            planName: "Plano Solo / Período de Teste",
-            planSlug: "solo",
-          });
-        }
       } catch (e) {
         console.warn("Erro ao buscar profissionais remotos:", e);
       }
@@ -712,67 +570,19 @@ export const ProfessionalsPage: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           <Link
             to="/assinatura"
-            className="px-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 transition flex items-center gap-1.5"
-            title="Ver detalhes de vagas e planos"
+            className="px-3.5 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 transition"
           >
-            <span>Capacidade:</span>
-            <span
-              className={`font-bold px-1.5 py-0.5 rounded-md text-[11px] ${
-                isLimitReached ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
-              }`}
-            >
-              {activeProfessionalsCount} de {planLimit.maxAllowed}
-            </span>
+            Vagas & Plano
           </Link>
           <button
             onClick={openCreate}
-            className={`px-4 py-2.5 rounded-xl font-bold text-sm transition shadow-md flex items-center justify-center gap-2 ${
-              isLimitReached
-                ? "bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200 shadow-none cursor-pointer"
-                : "bg-accent hover-bg-accent text-slate-950 shadow-accent/20"
-            }`}
-            title={
-              isLimitReached
-                ? "Limite de vagas do plano atingido. Clique para ver opções de upgrade."
-                : "Cadastrar novo profissional"
-            }
+            className="px-4 py-2.5 rounded-xl bg-accent hover-bg-accent text-slate-950 font-bold text-sm transition shadow-md shadow-accent/20 flex items-center justify-center gap-2"
           >
-            {isLimitReached ? <Lock className="w-4 h-4 text-amber-600" /> : <Plus className="w-4 h-4" />}
+            <Plus className="w-4 h-4" />
             <span>Cadastrar Profissional</span>
-            {isLimitReached && (
-              <span className="text-[10px] uppercase tracking-wider bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-black ml-0.5">
-                Limite
-              </span>
-            )}
           </button>
         </div>
       </div>
-
-      {/* Banner de Aviso de Limite Atingido */}
-      {isLimitReached && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/90 p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0 mt-0.5">
-              <ShieldAlert className="w-5 h-5 text-amber-700" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-amber-900">
-                Limite de profissionais atingido ({activeProfessionalsCount} de {planLimit.maxAllowed} vagas utilizadas)
-              </p>
-              <p className="text-xs text-amber-700 mt-0.5">
-                Seu <strong>{planLimit.planName}</strong> permite no máximo {planLimit.maxAllowed} profissional(is) ativo(s). Para contratar mais membros para sua equipe, faça um upgrade no seu plano de assinatura.
-              </p>
-            </div>
-          </div>
-          <Link
-            to="/assinatura"
-            className="shrink-0 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition flex items-center gap-1.5 self-stretch sm:self-auto justify-center"
-          >
-            <span>Fazer Upgrade de Plano</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-      )}
 
       {successToast && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 font-semibold shadow-sm flex items-center justify-between">
@@ -1003,21 +813,9 @@ export const ProfessionalsPage: React.FC = () => {
 
             <form onSubmit={saveProfessional} className="space-y-5 pt-4">
               {modalError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs font-semibold text-red-800 space-y-1.5">
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
-                    <span>{modalError}</span>
-                  </div>
-                  {(modalError.toLowerCase().includes("limite de profissionais") || modalError.toLowerCase().includes("plano")) && (
-                    <div className="pt-1">
-                      <Link
-                        to="/assinatura"
-                        className="inline-flex items-center gap-1 font-bold text-red-900 underline hover:text-red-950"
-                      >
-                        Ir para a tela de Assinatura para fazer upgrade &rarr;
-                      </Link>
-                    </div>
-                  )}
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{modalError}</span>
                 </div>
               )}
 
@@ -1558,70 +1356,6 @@ export const ProfessionalsPage: React.FC = () => {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Limite Atingido */}
-      {isLimitModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
-          <div className="bg-white text-slate-900 w-full max-w-md rounded-3xl p-6 shadow-2xl border border-slate-200 my-auto">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-800">
-                  <ShieldAlert className="w-6 h-6 text-amber-700" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">Limite de Profissionais</h3>
-                  <p className="text-xs text-slate-500">Capacidade do plano atingida</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsLimitModalOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="py-5 space-y-4">
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-500">Plano Atual:</span>
-                  <span className="font-bold text-slate-900">{planLimit.planName}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-500">Capacidade Máxima:</span>
-                  <span className="font-bold text-slate-900">{planLimit.maxAllowed} profissional(is)</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-500">Profissionais Ativos:</span>
-                  <span className="font-bold text-amber-600">{activeProfessionalsCount} cadastrado(s)</span>
-                </div>
-              </div>
-
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Você atingiu o limite de profissionais contratados na sua assinatura. Para cadastrar novos barbeiros e expandir sua equipe de atendimento, faça o upgrade para um plano com mais vagas.
-              </p>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
-              <Link
-                to="/assinatura"
-                className="w-full py-3 px-4 rounded-xl bg-accent hover-bg-accent text-slate-950 font-bold text-sm text-center transition shadow-md shadow-accent/20 flex items-center justify-center gap-2"
-              >
-                <span>Fazer Upgrade na Assinatura</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-              <button
-                type="button"
-                onClick={() => setIsLimitModalOpen(false)}
-                className="w-full py-2.5 px-4 rounded-xl text-slate-600 font-semibold text-xs text-center hover:bg-slate-100 transition"
-              >
-                Fechar
-              </button>
-            </div>
           </div>
         </div>
       )}

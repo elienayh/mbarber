@@ -35,12 +35,12 @@
     ]
   },
   {
-    "table": "financial_transactions",
-    "col": "professionals",
-    "error": "column financial_transactions.professionals does not exist",
+    "table": "appointments",
+    "col": "customers",
+    "error": "column appointments.customers does not exist",
     "occurrences": [
-      "src/pages/tenant/FinancialPage.tsx (select)",
-      "src/pages/tenant/FinancialPage.tsx (select)"
+      "src/pages/tenant/AgendaPage.tsx (select)",
+      "src/pages/tenant/DashboardPage.tsx (select)"
     ]
   },
   {
@@ -63,12 +63,38 @@
     ]
   },
   {
-    "table": "appointments",
-    "col": "customers",
-    "error": "column appointments.customers does not exist",
+    "table": "schedule_blocks",
+    "col": "start_date",
+    "error": "column schedule_blocks.start_date does not exist",
     "occurrences": [
-      "src/pages/tenant/AgendaPage.tsx (select)",
-      "src/pages/tenant/DashboardPage.tsx (select)"
+      "src/pages/tenant/AgendaPage.tsx (filter)",
+      "src/pages/tenant/AgendaPage.tsx (filter)",
+      "src/pages/tenant/AgendaPage.tsx (insert)"
+    ]
+  },
+  {
+    "table": "schedule_blocks",
+    "col": "reason",
+    "error": "column schedule_blocks.reason does not exist",
+    "occurrences": [
+      "src/pages/tenant/AgendaPage.tsx (insert)"
+    ]
+  },
+  {
+    "table": "schedule_blocks",
+    "col": "end_date",
+    "error": "column schedule_blocks.end_date does not exist",
+    "occurrences": [
+      "src/pages/tenant/AgendaPage.tsx (insert)"
+    ]
+  },
+  {
+    "table": "schedule_blocks",
+    "col": "null",
+    "error": "column schedule_blocks.null does not exist",
+    "occurrences": [
+      "src/pages/tenant/AgendaPage.tsx (insert)",
+      "src/pages/tenant/AgendaPage.tsx (insert)"
     ]
   },
   {
@@ -79,6 +105,15 @@
       "src/pages/tenant/ServicesPage.tsx (select)",
       "src/pages/tenant/ServicesPage.tsx (select)",
       "src/pages/tenant/ServicesPage.tsx (select)"
+    ]
+  },
+  {
+    "table": "financial_transactions",
+    "col": "professionals",
+    "error": "column financial_transactions.professionals does not exist",
+    "occurrences": [
+      "src/pages/tenant/FinancialPage.tsx (select)",
+      "src/pages/tenant/FinancialPage.tsx (select)"
     ]
   }
 ]
