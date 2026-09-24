@@ -568,12 +568,12 @@ export const SchedulesPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {activeTab === "recurring_blocks" && (
               <button
                 type="button"
                 onClick={() => handleOpenBlockModal()}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent text-white font-bold text-sm hover:brightness-110 active:scale-95 transition shadow-lg shadow-accent/25"
+                className="w-full sm:w-auto min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-accent text-white font-bold text-sm hover:brightness-110 active:scale-95 transition shadow-lg shadow-accent/25"
               >
                 <Plus className="w-4 h-4" />
                 Novo Bloqueio Recorrente
@@ -584,7 +584,7 @@ export const SchedulesPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleOpenClientModal()}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-accent text-white font-bold text-sm hover:brightness-110 active:scale-95 transition shadow-lg shadow-accent/25"
+                className="w-full sm:w-auto min-h-[44px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-accent text-white font-bold text-sm hover:brightness-110 active:scale-95 transition shadow-lg shadow-accent/25"
               >
                 <Plus className="w-4 h-4" />
                 Novo Cliente Recorrente
@@ -608,12 +608,12 @@ export const SchedulesPage: React.FC = () => {
           </div>
         )}
 
-        {/* Barra de Abas */}
-        <div className="flex flex-wrap gap-2 mt-6 pt-6 border-t border-slate-800">
+        {/* Barra de Abas Responsiva */}
+        <div className="flex overflow-x-auto no-scrollbar gap-2 mt-6 pt-6 border-t border-slate-800 pb-1.5 snap-x">
           <button
             type="button"
             onClick={() => handleTabChange("business_hours")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition ${
+            className={`snap-start shrink-0 min-h-[44px] flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition active:scale-95 ${
               activeTab === "business_hours"
                 ? "bg-accent text-white shadow-md shadow-accent/30"
                 : "bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white"
@@ -626,7 +626,7 @@ export const SchedulesPage: React.FC = () => {
           <button
             type="button"
             onClick={() => handleTabChange("lunch_breaks")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition ${
+            className={`snap-start shrink-0 min-h-[44px] flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition active:scale-95 ${
               activeTab === "lunch_breaks"
                 ? "bg-accent text-white shadow-md shadow-accent/30"
                 : "bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white"
@@ -644,7 +644,7 @@ export const SchedulesPage: React.FC = () => {
           <button
             type="button"
             onClick={() => handleTabChange("recurring_blocks")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition ${
+            className={`snap-start shrink-0 min-h-[44px] flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition active:scale-95 ${
               activeTab === "recurring_blocks"
                 ? "bg-accent text-white shadow-md shadow-accent/30"
                 : "bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white"
@@ -662,7 +662,7 @@ export const SchedulesPage: React.FC = () => {
           <button
             type="button"
             onClick={() => handleTabChange("recurring_clients")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition ${
+            className={`snap-start shrink-0 min-h-[44px] flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs md:text-sm font-bold transition active:scale-95 ${
               activeTab === "recurring_clients"
                 ? "bg-accent text-white shadow-md shadow-accent/30"
                 : "bg-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white"
@@ -1280,8 +1280,8 @@ export const SchedulesPage: React.FC = () => {
 
       {/* Modal de Criação / Edição de Bloqueio Recorrente */}
       {isBlockModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 my-8">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 sm:space-y-5 my-auto max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-accent/15 text-accent flex items-center justify-center font-bold">
@@ -1299,7 +1299,8 @@ export const SchedulesPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsBlockModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg"
+                className="text-slate-400 hover:text-slate-700 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl"
+                aria-label="Fechar"
               >
                 ✕
               </button>
@@ -1493,8 +1494,8 @@ export const SchedulesPage: React.FC = () => {
 
       {/* Modal de Criação / Edição de Cliente Recorrente */}
       {isClientModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 my-8">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-4 sm:p-6 shadow-2xl border border-slate-200 space-y-4 sm:space-y-5 my-auto max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-emerald-500/15 text-emerald-600 flex items-center justify-center font-bold">
@@ -1512,7 +1513,8 @@ export const SchedulesPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsClientModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg"
+                className="text-slate-400 hover:text-slate-700 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl"
+                aria-label="Fechar"
               >
                 ✕
               </button>
