@@ -35,8 +35,8 @@ ALTER TABLE public.recurring_schedule_blocks ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS recurring_blocks_tenant_isolation ON public.recurring_schedule_blocks;
 CREATE POLICY recurring_blocks_tenant_isolation ON public.recurring_schedule_blocks
   FOR ALL TO authenticated
-  USING (tenant_id = public.current_user_tenant_id())
-  WITH CHECK (tenant_id = public.current_user_tenant_id());
+  USING (public.user_has_tenant_access(tenant_id))
+  WITH CHECK (public.user_has_tenant_access(tenant_id));
 
 DROP POLICY IF EXISTS recurring_blocks_anon_select ON public.recurring_schedule_blocks;
 CREATE POLICY recurring_blocks_anon_select ON public.recurring_schedule_blocks
@@ -44,24 +44,16 @@ CREATE POLICY recurring_blocks_anon_select ON public.recurring_schedule_blocks
   USING (is_active = true);
 
 -- 2. EXPANDIR APPOINTMENT_SERIES PARA RECORRÊNCIAS AVANÇADAS (DIA FIXO DO MÊS, ÚLTIMA SEXTA, ETC.)
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns 
-    WHERE table_name = 'appointment_series' AND column_name = 'rule_type'
-  ) THEN
-    ALTER TABLE public.appointment_series 
-      ADD COLUMN rule_type VARCHAR(50) DEFAULT 'weekly' NOT NULL,
-      ADD COLUMN day_of_month INTEGER CHECK (day_of_month BETWEEN 1 AND 31),
-      ADD COLUMN week_of_month INTEGER CHECK (week_of_month BETWEEN -1 AND 5),
-      ADD COLUMN price_cents INTEGER,
-      ADD COLUMN notes TEXT,
-      ADD COLUMN client_name VARCHAR(150),
-      ADD COLUMN client_phone VARCHAR(50),
-      ADD COLUMN is_active BOOLEAN DEFAULT true NOT NULL,
-      ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now() NOT NULL;
-  END IF;
-END $$;
+ALTER TABLE public.appointment_series 
+  ADD COLUMN IF NOT EXISTS rule_type VARCHAR(50) DEFAULT 'weekly' NOT NULL,
+  ADD COLUMN IF NOT EXISTS day_of_month INTEGER CHECK (day_of_month BETWEEN 1 AND 31),
+  ADD COLUMN IF NOT EXISTS week_of_month INTEGER CHECK (week_of_month BETWEEN -1 AND 5),
+  ADD COLUMN IF NOT EXISTS price_cents INTEGER,
+  ADD COLUMN IF NOT EXISTS notes TEXT,
+  ADD COLUMN IF NOT EXISTS client_name VARCHAR(150),
+  ADD COLUMN IF NOT EXISTS client_phone VARCHAR(50),
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true NOT NULL,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now() NOT NULL;
 
 -- 3. GARANTIR RLS EM APPOINTMENT_SERIES
 ALTER TABLE public.appointment_series ENABLE ROW LEVEL SECURITY;
@@ -69,8 +61,8 @@ ALTER TABLE public.appointment_series ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS appointment_series_tenant_isolation ON public.appointment_series;
 CREATE POLICY appointment_series_tenant_isolation ON public.appointment_series
   FOR ALL TO authenticated
-  USING (tenant_id = public.current_user_tenant_id())
-  WITH CHECK (tenant_id = public.current_user_tenant_id());
+  USING (public.user_has_tenant_access(tenant_id))
+  WITH CHECK (public.user_has_tenant_access(tenant_id));
 
 DROP POLICY IF EXISTS appointment_series_anon_select ON public.appointment_series;
 CREATE POLICY appointment_series_anon_select ON public.appointment_series
