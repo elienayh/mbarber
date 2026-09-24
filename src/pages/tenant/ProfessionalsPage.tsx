@@ -793,11 +793,15 @@ export const ProfessionalsPage: React.FC = () => {
                         <Coffee className="w-3.5 h-3.5 text-amber-600" />
                         <span>Almoço:</span>
                       </span>
-                      <span className="font-semibold text-amber-800">
+                      <Link
+                        to="/horarios?tab=lunch_breaks"
+                        className="text-xs font-semibold text-amber-800 hover:text-amber-900 hover:underline flex items-center gap-1"
+                        title="Gerenciar no menu Horários"
+                      >
                         {pro.work_schedule?.hasLunchBreak !== false
                           ? `${pro.work_schedule?.lunchStart || "12:00"} - ${pro.work_schedule?.lunchEnd || "13:00"}`
                           : "Sem intervalo"}
-                      </span>
+                      </Link>
                     </div>
                   </div>
                 </div>
@@ -1253,66 +1257,28 @@ export const ProfessionalsPage: React.FC = () => {
                   )}
                 </div>
 
-                {/* Horário de Almoço */}
-                <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1.5 rounded-lg bg-amber-100 text-amber-800">
-                        <Coffee className="w-4 h-4" />
+                {/* Horário de Almoço - Centralizado no menu Horários */}
+                <div className="p-3.5 bg-amber-500/10 rounded-xl border border-amber-500/25 flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-amber-100 text-amber-800 shrink-0 mt-0.5">
+                      <Coffee className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">
+                        Horário de Almoço & Pausas
                       </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-900">Intervalo de Almoço / Pausa</div>
-                        <div className="text-[11px] text-slate-500">
-                          Bloqueia automaticamente este período na agenda e no chat de agendamento online
-                        </div>
+                      <div className="text-[11px] text-slate-600 mt-0.5">
+                        Os horários de almoço agora são configurados de forma centralizada no menu{" "}
+                        <span className="font-bold text-slate-800">Horários</span> para toda a barbearia.
                       </div>
                     </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={workSchedule.hasLunchBreak}
-                        onChange={(e) =>
-                          setWorkSchedule((prev) => ({
-                            ...prev,
-                            hasLunchBreak: e.target.checked,
-                          }))
-                        }
-                        className="sr-only peer"
-                      />
-                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
-                    </label>
                   </div>
-
-                  {workSchedule.hasLunchBreak && (
-                    <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          Início do Almoço
-                        </label>
-                        <input
-                          type="time"
-                          value={workSchedule.lunchStart}
-                          onChange={(e) =>
-                            setWorkSchedule((prev) => ({ ...prev, lunchStart: e.target.value }))
-                          }
-                          className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-300 text-slate-900"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                          Retorno do Almoço
-                        </label>
-                        <input
-                          type="time"
-                          value={workSchedule.lunchEnd}
-                          onChange={(e) =>
-                            setWorkSchedule((prev) => ({ ...prev, lunchEnd: e.target.value }))
-                          }
-                          className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-300 text-slate-900"
-                        />
-                      </div>
-                    </div>
-                  )}
+                  <Link
+                    to="/horarios?tab=lunch_breaks"
+                    className="px-2.5 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-900 text-[11px] font-bold hover:bg-amber-50 transition shrink-0 whitespace-nowrap shadow-sm"
+                  >
+                    Acessar Horários →
+                  </Link>
                 </div>
               </div>
 

@@ -19,6 +19,7 @@ import {
   Sparkles,
   CreditCard,
   ShieldAlert,
+  Clock,
 } from "lucide-react";
 import { LogoIcon } from "@/components/common/Logo";
 
@@ -38,6 +39,7 @@ export const TenantLayout: React.FC = () => {
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Agenda", href: "/agenda", icon: Calendar },
+    { label: "Horários", href: "/horarios", icon: Clock },
     { label: "Clientes", href: "/clientes", icon: Users },
     { label: "Serviços", href: "/servicos", icon: Scissors },
     { label: "Profissionais", href: "/profissionais", icon: UserCheck },
@@ -51,7 +53,7 @@ export const TenantLayout: React.FC = () => {
   const visibleNavItems = tenantRole === "professional"
     ? navItems.filter((item) => ["/dashboard", "/agenda", "/clientes"].includes(item.href))
     : tenantRole === "receptionist"
-      ? navItems.filter((item) => ["/dashboard", "/agenda", "/clientes", "/servicos", "/estoque"].includes(item.href))
+      ? navItems.filter((item) => ["/dashboard", "/agenda", "/horarios", "/clientes", "/servicos", "/estoque"].includes(item.href))
       : navItems;
   const mobileNavItems = visibleNavItems.slice(0, 5);
 

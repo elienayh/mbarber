@@ -28,6 +28,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { broadcastNewAppointment } from "@/lib/notifications";
 import { DeleteConfirmModal } from "@/components/common/DeleteConfirmModal";
 import { recordAuditLog } from "@/lib/audit";
+import { Link } from "react-router-dom";
+import {
+  getBusinessHours,
+  getBarberLunchSchedules,
+  getRecurringBlocks,
+  getRecurringClients,
+  BusinessHourConfig,
+} from "@/lib/schedules";
+import { isDateMatchingRecurrence, formatRecurrenceDescription } from "@/lib/recurrence";
 
 interface Appointment {
   id: string;
@@ -76,6 +85,7 @@ export interface ScheduleBlock {
   isAllDay: boolean;
   title: string;
   reason?: string;
+  isRecurring?: boolean;
 }
 
 interface ServiceOption {
@@ -91,6 +101,7 @@ export const AgendaPage: React.FC = () => {
   const [barbers, setBarbers] = useState<Barber[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [businessHours, setBusinessHours] = useState<BusinessHourConfig[]>([]);
   const [selectedBarberId, setSelectedBarberId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -272,6 +283,38 @@ export const AgendaPage: React.FC = () => {
         }
       } catch {}
 
+      // Carregar configurações centralizadas do menu "Horários" (única fonte de verdade)
+      const [bizHours, lunchSchedules, recurringBlocks, recurringClients] = await Promise.all([
+        getBusinessHours(tenant.id),
+        getBarberLunchSchedules(tenant.id),
+        getRecurringBlocks(tenant.id),
+        getRecurringClients(tenant.id),
+      ]);
+      setBusinessHours(bizHours);
+
+      // Sincroniza intervalos de almoço dos barbeiros com a fonte centralizada de horários
+      const lunchMap = new Map(lunchSchedules.map((l) => [l.professionalId, l]));
+      loadedBarbers = loadedBarbers.map((b) => {
+        const lunch = lunchMap.get(b.id);
+        if (lunch) {
+          return {
+            ...b,
+            workSchedule: {
+              ...(b.workSchedule || {
+                followBarbershopHours: true,
+                startTime: "09:00",
+                endTime: "19:00",
+                workDays: [0, 1, 2, 3, 4, 5, 6],
+              }),
+              hasLunchBreak: lunch.hasLunchBreak,
+              lunchStart: lunch.lunchStart,
+              lunchEnd: lunch.lunchEnd,
+            },
+          };
+        }
+        return b;
+      });
+
       setBarbers(loadedBarbers);
       setServices(loadedServices);
       setProductsList(loadedProducts);
@@ -308,6 +351,55 @@ export const AgendaPage: React.FC = () => {
       const aptMap = new Map<string, Appointment>();
       remoteAppointments.forEach((a) => aptMap.set(a.id, a));
       localAppointments.forEach((a) => aptMap.set(a.id, a));
+
+      // Integrar agendamentos recorrentes (clientes fixos) que batem com a data selecionada
+      (recurringClients || []).forEach((rClient) => {
+        if (rClient.is_active === false) return;
+        const matches = isDateMatchingRecurrence(selectedDate, {
+          recurrenceType: rClient.rule_type,
+          dayOfWeek: rClient.day_of_week ?? undefined,
+          dayOfMonth: rClient.day_of_month ?? undefined,
+          weekOfMonth: rClient.week_of_month ?? undefined,
+          startDate: rClient.start_date,
+          endDate: rClient.end_date,
+        });
+
+        if (matches) {
+          // Checa se já existe algum agendamento real para este barbeiro e horário
+          const alreadyExists = Array.from(aptMap.values()).some(
+            (a) =>
+              a.barberId === rClient.professional_id &&
+              a.time === rClient.preferred_time &&
+              a.status !== "canceled"
+          );
+
+          if (!alreadyExists) {
+            const virtualId = `rec_client_${rClient.id}_${selectedDate}`;
+            aptMap.set(virtualId, {
+              id: virtualId,
+              barberId: rClient.professional_id,
+              serviceId: rClient.service_id,
+              customerName: rClient.client_name,
+              customerPhone: rClient.client_phone || "",
+              serviceName: rClient.service_name || "Serviço Recorrente",
+              time: rClient.preferred_time,
+              durationMinutes: 30,
+              priceCents: rClient.price_cents,
+              basePriceCents: rClient.price_cents,
+              manualAdjustmentCents: 0,
+              adjustmentNotes: `Cliente Recorrente (${formatRecurrenceDescription({
+                recurrenceType: rClient.rule_type,
+                dayOfWeek: rClient.day_of_week ?? undefined,
+                dayOfMonth: rClient.day_of_month ?? undefined,
+                weekOfMonth: rClient.week_of_month ?? undefined,
+              })})`,
+              status: "scheduled",
+              isRecurrent: true,
+            });
+          }
+        }
+      });
+
       setAppointments(Array.from(aptMap.values()));
 
       // Processa e mescla bloqueios da agenda (almoço, folga, compromisso)
@@ -353,6 +445,33 @@ export const AgendaPage: React.FC = () => {
           }
         }
       } catch {}
+
+      // Integrar bloqueios recorrentes ativos que batem com a data selecionada
+      (recurringBlocks || []).forEach((rBlock) => {
+        if (rBlock.is_active === false) return;
+        const matches = isDateMatchingRecurrence(selectedDate, {
+          recurrenceType: rBlock.recurrence_type,
+          dayOfWeek: rBlock.day_of_week,
+          dayOfMonth: rBlock.day_of_month,
+          startDate: rBlock.start_date,
+          endDate: rBlock.end_date,
+        });
+
+        if (matches) {
+          loadedBlocks.push({
+            id: `rec_block_${rBlock.id}_${selectedDate}`,
+            tenantId: tenant.id,
+            barberId: rBlock.professional_id || null,
+            date: selectedDate,
+            startTime: rBlock.start_time,
+            endTime: rBlock.end_time,
+            isAllDay: rBlock.is_all_day,
+            title: `${rBlock.title} (Recorrente)`,
+            reason: rBlock.title,
+            isRecurring: true,
+          });
+        }
+      });
 
       setBlocks(loadedBlocks);
       setLoading(false);
@@ -510,7 +629,67 @@ export const AgendaPage: React.FC = () => {
     setTimeout(() => setSuccessToast(null), 4000);
   };
 
-  const openAppointmentDetails = async (appointment: Appointment) => {
+  const ensurePersistedAppointment = async (app: Appointment): Promise<Appointment> => {
+    if (!app.id.startsWith("rec_client_") || !tenant?.id) return app;
+
+    try {
+      let customerId: string | null = null;
+      if (app.customerName) {
+        const { data: existingCust } = await (supabase.from("customers") as any)
+          .select("id")
+          .eq("tenant_id", tenant.id)
+          .eq("name", app.customerName)
+          .maybeSingle();
+
+        if (existingCust?.id) {
+          customerId = existingCust.id;
+        } else {
+          const { data: newCust } = await (supabase.from("customers") as any)
+            .insert({
+              tenant_id: tenant.id,
+              name: app.customerName,
+              phone: app.customerPhone || null,
+            })
+            .select("id")
+            .single();
+          customerId = newCust?.id || null;
+        }
+      }
+
+      const realId = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `apt_${Date.now()}`;
+      const startTimeIso = `${selectedDate}T${app.time}:00`;
+
+      await (supabase.from("appointments") as any).insert({
+        id: realId,
+        tenant_id: tenant.id,
+        professional_id: app.barberId,
+        customer_id: customerId,
+        service_id: app.serviceId || services[0]?.id,
+        start_time: startTimeIso,
+        duration_minutes: app.durationMinutes || 30,
+        price_cents: app.priceCents,
+        manual_adjustment_cents: app.manualAdjustmentCents || 0,
+        adjustment_notes: app.adjustmentNotes || null,
+        status: app.status || "scheduled",
+      });
+
+      const persistedApp: Appointment = {
+        ...app,
+        id: realId,
+      };
+
+      setAppointments((prev) =>
+        prev.map((a) => (a.id === app.id ? persistedApp : a))
+      );
+      return persistedApp;
+    } catch (err) {
+      console.warn("Aviso ao persistir agendamento recorrente:", err);
+      return app;
+    }
+  };
+
+  const openAppointmentDetails = async (rawAppointment: Appointment) => {
+    const appointment = await ensurePersistedAppointment(rawAppointment);
     setSelectedAppointment(appointment);
     setAppointmentItems([]);
     setLoadingItems(true);
@@ -1009,12 +1188,48 @@ export const AgendaPage: React.FC = () => {
     }
   };
 
-  const timeSlots = [
-    "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
-    "12:00", "13:00", "13:30", "14:00", "14:30", "15:00",
-    "15:30", "16:00", "16:30", "17:00", "17:30", "18:00",
-    "18:30", "19:00", "19:30"
-  ];
+  const currentDayOfWeek = useMemo(() => {
+    const d = new Date(`${selectedDate}T12:00:00`);
+    return d.getDay();
+  }, [selectedDate]);
+
+  const currentBusinessHour = useMemo(() => {
+    return businessHours.find((h) => h.day_of_week === currentDayOfWeek);
+  }, [businessHours, currentDayOfWeek]);
+
+  const isBarbershopClosedToday = currentBusinessHour?.is_closed === true;
+
+  const timeSlots = useMemo(() => {
+    if (isBarbershopClosedToday) {
+      return [];
+    }
+
+    const openTime = currentBusinessHour?.open_time || "09:00";
+    const closeTime = currentBusinessHour?.close_time || "19:30";
+
+    const [openH, openM] = (openTime || "09:00").split(":").map(Number);
+    const [closeH, closeM] = (closeTime || "19:30").split(":").map(Number);
+
+    let currentMinutes = (openH || 9) * 60 + (openM || 0);
+    const endMinutes = (closeH || 19) * 60 + (closeM || 30);
+
+    const slots: string[] = [];
+    while (currentMinutes < endMinutes) {
+      const h = String(Math.floor(currentMinutes / 60)).padStart(2, "0");
+      const m = String(currentMinutes % 60).padStart(2, "0");
+      slots.push(`${h}:${m}`);
+      currentMinutes += 30;
+    }
+
+    return slots.length > 0
+      ? slots
+      : [
+          "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
+          "12:00", "13:00", "13:30", "14:00", "14:30", "15:00",
+          "15:30", "16:00", "16:30", "17:00", "17:30", "18:00",
+          "18:30", "19:00", "19:30"
+        ];
+  }, [currentBusinessHour, isBarbershopClosedToday]);
 
   const handleCreateBlock = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1205,6 +1420,16 @@ export const AgendaPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Link para o menu centralizado de Horários */}
+          <Link
+            to="/horarios"
+            className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-sm transition shadow-xs flex items-center gap-1.5"
+            title="Gerenciar funcionamento, intervalos de almoço e recorrências"
+          >
+            <Clock className="w-4 h-4 text-slate-500" />
+            <span className="hidden md:inline">Horários</span>
+          </Link>
+
           {/* Botão de Bloquear Horário / Dia */}
           <button
             onClick={() => {
@@ -1298,84 +1523,105 @@ export const AgendaPage: React.FC = () => {
               {appointments.filter((appointment) => appointment.barberId === selectedBarberId).length} agendamentos
             </span>
           </div>
-          <div className="divide-y divide-slate-100">
-            {timeSlots.map((slot) => {
-              const status = getSlotStatus(activeMobileBarber, slot);
 
-              return (
-                <div key={slot} className="min-h-16 flex items-center gap-3 px-4 py-2">
-                  <span className="w-12 shrink-0 text-sm font-bold text-slate-400">{slot}</span>
+          {timeSlots.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50/70 space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-900">Barbearia Fechada Neste Dia</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Não há expediente configurado para {dateLabel}.
+                </p>
+              </div>
+              <Link
+                to="/horarios"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-accent hover-bg-accent text-slate-950 text-xs font-bold shadow-xs transition"
+              >
+                Ajustar Horário de Funcionamento →
+              </Link>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {timeSlots.map((slot) => {
+                const status = getSlotStatus(activeMobileBarber, slot);
 
-                  {status.type === "appointment" ? (
-                    <div className="flex-1 min-w-0 rounded-xl border border-accent surface-accent-soft px-3 py-2">
+                return (
+                  <div key={slot} className="min-h-16 flex items-center gap-3 px-4 py-2">
+                    <span className="w-12 shrink-0 text-sm font-bold text-slate-400">{slot}</span>
+
+                    {status.type === "appointment" ? (
+                      <div className="flex-1 min-w-0 rounded-xl border border-accent surface-accent-soft px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => openAppointmentDetails(status.appointment)}
+                          className="w-full text-left cursor-pointer"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-bold text-slate-900">{status.appointment.customerName}</span>
+                            <span className="shrink-0 text-xs font-bold text-primary-on-light">{formatCurrency(status.appointment.priceCents)}</span>
+                          </div>
+                          <span className="block truncate text-xs text-slate-600">{status.appointment.serviceName} · {status.appointment.durationMinutes} min</span>
+                        </button>
+                      </div>
+                    ) : status.type === "block" ? (
                       <button
                         type="button"
-                        onClick={() => openAppointmentDetails(status.appointment)}
-                        className="w-full text-left cursor-pointer"
+                        onClick={() => { setSelectedBlock(status.block); setIsBlockDetailModalOpen(true); }}
+                        className="flex-1 min-w-0 rounded-xl border border-dashed border-amber-400 bg-amber-50 px-3 py-2 text-left transition hover:bg-amber-100 cursor-pointer"
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-sm font-bold text-slate-900">{status.appointment.customerName}</span>
-                          <span className="shrink-0 text-xs font-bold text-primary-on-light">{formatCurrency(status.appointment.priceCents)}</span>
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-amber-900 truncate">
+                            <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                            <span>{status.block.title}</span>
+                          </div>
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 shrink-0">
+                            Bloqueado
+                          </span>
                         </div>
-                        <span className="block truncate text-xs text-slate-600">{status.appointment.serviceName} · {status.appointment.durationMinutes} min</span>
+                        <span className="block text-[11px] text-amber-700 mt-0.5">Toque para liberar horário</span>
                       </button>
-                    </div>
-                  ) : status.type === "block" ? (
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedBlock(status.block); setIsBlockDetailModalOpen(true); }}
-                      className="flex-1 min-w-0 rounded-xl border border-dashed border-amber-400 bg-amber-50 px-3 py-2 text-left transition hover:bg-amber-100 cursor-pointer"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 font-bold text-xs text-amber-900 truncate">
-                          <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                          <span>{status.block.title}</span>
+                    ) : status.type === "lunch" ? (
+                      <div className="flex-1 min-w-0 rounded-xl border border-dashed border-slate-300 bg-slate-100 px-3 py-2 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 truncate">
+                          <Coffee className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                          <span>{status.label}</span>
                         </div>
-                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 shrink-0">
-                          Bloqueado
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 shrink-0">
+                          Pausa
                         </span>
                       </div>
-                      <span className="block text-[11px] text-amber-700 mt-0.5">Toque para liberar horário</span>
-                    </button>
-                  ) : status.type === "lunch" ? (
-                    <div className="flex-1 min-w-0 rounded-xl border border-dashed border-slate-300 bg-slate-100 px-3 py-2 flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 truncate">
-                        <Coffee className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                        <span>{status.label}</span>
+                    ) : status.type === "day_off" ? (
+                      <div className="flex-1 min-w-0 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-400 italic">
+                        Não atende neste dia da semana
                       </div>
-                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 shrink-0">
-                        Pausa
-                      </span>
-                    </div>
-                  ) : status.type === "day_off" ? (
-                    <div className="flex-1 min-w-0 rounded-xl bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-400 italic">
-                      Não atende neste dia da semana
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex items-center justify-between text-xs text-slate-400">
-                      <span>Horário livre</span>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => openBlockWith(activeMobileBarber?.id || "", slot)}
-                          className="px-2 py-1 rounded-lg text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition"
-                        >
-                          Bloquear
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openNewWith(activeMobileBarber?.id || "", slot)}
-                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-900 bg-accent/30 hover:bg-accent border border-accent transition"
-                        >
-                          + Agendar
-                        </button>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-between text-xs text-slate-400">
+                        <span>Horário livre</span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openBlockWith(activeMobileBarber?.id || "", slot)}
+                            className="px-2 py-1 rounded-lg text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition"
+                          >
+                            Bloquear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openNewWith(activeMobileBarber?.id || "", slot)}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-900 bg-accent/30 hover:bg-accent border border-accent transition"
+                          >
+                            + Agendar
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
@@ -1409,7 +1655,26 @@ export const AgendaPage: React.FC = () => {
 
         {/* Time Grid Rows */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-          {timeSlots.map((slot) => (
+          {timeSlots.length === 0 ? (
+            <div className="py-24 text-center space-y-3 bg-slate-50/50">
+              <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto">
+                <Clock className="w-7 h-7" />
+              </div>
+              <div className="max-w-md mx-auto">
+                <p className="text-base font-bold text-slate-900">Barbearia Fechada Neste Dia</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Não há expediente comercial programado para este dia da semana. Os agendamentos públicos no chat e online permanecem bloqueados para esta data.
+                </p>
+              </div>
+              <Link
+                to="/horarios"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-accent hover-bg-accent text-slate-950 text-xs font-bold shadow-sm transition"
+              >
+                Gerenciar Horários de Funcionamento →
+              </Link>
+            </div>
+          ) : (
+            timeSlots.map((slot) => (
             <div
               key={slot}
               className="grid min-h-[56px] hover:bg-slate-50/50"
@@ -1505,7 +1770,7 @@ export const AgendaPage: React.FC = () => {
                 );
               })}
             </div>
-          ))}
+          )))}
         </div>
       </div>
 
@@ -2367,24 +2632,50 @@ export const AgendaPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="pt-2 flex flex-col gap-2">
-              <button
-                type="button"
-                disabled={actionLoading}
-                onClick={() => handleDeleteBlock(selectedBlock)}
-                className="w-full py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-800 text-sm font-bold hover:bg-emerald-100 flex items-center justify-center gap-2 disabled:opacity-50 transition"
-              >
-                <Trash2 className="w-4 h-4 text-emerald-700" />
-                <span>Desbloquear / Liberar Horário</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsBlockDetailModalOpen(false)}
-                className="w-full py-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
-              >
-                Fechar
-              </button>
-            </div>
+            {selectedBlock.isRecurring ? (
+              <div className="pt-2 flex flex-col gap-2">
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
+                  <p className="font-bold flex items-center gap-1.5 mb-1">
+                    <Repeat className="w-3.5 h-3.5 text-amber-700" />
+                    Regra de Bloqueio Recorrente
+                  </p>
+                  Este bloqueio é gerado por uma regra recorrente da barbearia (ex: curso, intervalo semanal ou compromisso fixo).
+                </div>
+                <Link
+                  to="/horarios?tab=recurring_blocks"
+                  className="w-full py-2.5 rounded-xl bg-accent hover-bg-accent text-slate-950 text-sm font-bold flex items-center justify-center gap-2 transition"
+                >
+                  <Clock className="w-4 h-4" />
+                  <span>Gerenciar no menu Horários</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setIsBlockDetailModalOpen(false)}
+                  className="w-full py-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  Fechar
+                </button>
+              </div>
+            ) : (
+              <div className="pt-2 flex flex-col gap-2">
+                <button
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={() => handleDeleteBlock(selectedBlock)}
+                  className="w-full py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-800 text-sm font-bold hover:bg-emerald-100 flex items-center justify-center gap-2 disabled:opacity-50 transition"
+                >
+                  <Trash2 className="w-4 h-4 text-emerald-700" />
+                  <span>Desbloquear / Liberar Horário</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsBlockDetailModalOpen(false)}
+                  className="w-full py-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  Fechar
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

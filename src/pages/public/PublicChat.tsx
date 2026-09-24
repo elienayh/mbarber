@@ -29,6 +29,13 @@ import { formatCurrency, formatPhone } from "@/lib/utils";
 import { MapLocationViewer } from "@/components/MapLocationViewer";
 import { broadcastNewAppointment } from "@/lib/notifications";
 import { LogoIcon } from "@/components/common/Logo";
+import { isDateMatchingRecurrence } from "@/lib/recurrence";
+import {
+  getBusinessHours,
+  getBarberLunchSchedules,
+  getRecurringBlocks,
+  getRecurringClients,
+} from "@/lib/schedules";
 
 interface Service {
   id: string;
@@ -429,6 +436,23 @@ export const PublicChat: React.FC = () => {
       setSlotsLoading(true);
       setSlotsErrorMessage(null);
 
+      // Carregar configurações centralizadas (horário de funcionamento, almoços, bloqueios e clientes fixos)
+      const [bizHours, lunchSchedules, recurringBlocks, recurringClients] = await Promise.all([
+        getBusinessHours(tenant.id),
+        getBarberLunchSchedules(tenant.id),
+        getRecurringBlocks(tenant.id),
+        getRecurringClients(tenant.id),
+      ]);
+
+      // 1. Verifica se a barbearia está fechada neste dia da semana
+      const dayOfWeek = new Date(`${selectedDate}T12:00:00`).getDay();
+      const currentDayConfig = bizHours.find((h) => h.day_of_week === dayOfWeek);
+      if (currentDayConfig && currentDayConfig.is_closed) {
+        setAvailableSlots([]);
+        setSlotsLoading(false);
+        return;
+      }
+
       // Bloqueios de horário reais cadastrados para este tenant
       let activeBlocks: any[] = [];
       try {
@@ -449,6 +473,48 @@ export const PublicChat: React.FC = () => {
         console.warn("Erro ao consultar schedule_blocks:", err);
       }
 
+      // Integrar bloqueios recorrentes ativos que batem com a data
+      (recurringBlocks || []).forEach((rBlock) => {
+        if (rBlock.is_active === false) return;
+        const matches = isDateMatchingRecurrence(selectedDate, {
+          recurrenceType: rBlock.recurrence_type,
+          dayOfWeek: rBlock.day_of_week,
+          dayOfMonth: rBlock.day_of_month,
+          startDate: rBlock.start_date,
+          endDate: rBlock.end_date,
+        });
+        if (matches) {
+          activeBlocks.push({
+            id: `rec_${rBlock.id}`,
+            professional_id: rBlock.professional_id || null,
+            start_time: rBlock.start_time,
+            end_time: rBlock.end_time,
+            is_all_day: rBlock.is_all_day,
+            title: rBlock.title,
+          });
+        }
+      });
+
+      // Integrar horários já ocupados por clientes recorrentes para este dia
+      const recurringReservedSlots: { professional_id: string; time: string }[] = [];
+      (recurringClients || []).forEach((rClient) => {
+        if (rClient.is_active === false) return;
+        const matches = isDateMatchingRecurrence(selectedDate, {
+          recurrenceType: rClient.rule_type,
+          dayOfWeek: rClient.day_of_week ?? undefined,
+          dayOfMonth: rClient.day_of_month ?? undefined,
+          weekOfMonth: rClient.week_of_month ?? undefined,
+          startDate: rClient.start_date,
+          endDate: rClient.end_date,
+        });
+        if (matches) {
+          recurringReservedSlots.push({
+            professional_id: rClient.professional_id,
+            time: rClient.preferred_time,
+          });
+        }
+      });
+
       // Verifica se há dia inteiro bloqueado para este profissional ou todos
       const isDayBlocked = activeBlocks.some(
         (b) =>
@@ -462,11 +528,13 @@ export const PublicChat: React.FC = () => {
         return;
       }
 
+      // Intervalo de almoço centralizado do profissional
+      const proLunchConfig = lunchSchedules.find((l) => l.professionalId === selectedProfessional.id);
+
       // Verifica horário próprio de trabalho e dia de folga do barbeiro (se existir configuração personalizada)
       const sched = (selectedProfessional as any).work_schedule;
       if (selectedProfessional.id !== "any" && sched) {
         if (sched.followBarbershopHours === false && Array.isArray(sched.workDays)) {
-          const dayOfWeek = new Date(`${selectedDate}T12:00:00`).getDay();
           if (!sched.workDays.includes(dayOfWeek)) {
             setAvailableSlots([]);
             setSlotsLoading(false);
@@ -485,16 +553,26 @@ export const PublicChat: React.FC = () => {
       };
 
       const isSlotAllowed = (timeStr: string) => {
-        // 1. Checa intervalo de almoço do barbeiro se configurado
-        if (selectedProfessional.id !== "any" && sched && sched.hasLunchBreak !== false) {
-          const lStart = sched.lunchStart || "12:00";
-          const lEnd = sched.lunchEnd || "13:00";
+        // 1. Checa intervalo de almoço do barbeiro centralizado ou da ficha
+        const hasLunch = proLunchConfig ? proLunchConfig.hasLunchBreak : (sched && sched.hasLunchBreak !== false);
+        const lStart = proLunchConfig?.lunchStart || sched?.lunchStart || "12:00";
+        const lEnd = proLunchConfig?.lunchEnd || sched?.lunchEnd || "13:00";
+
+        if (selectedProfessional.id !== "any" && hasLunch) {
           if (timeStr >= lStart && timeStr < lEnd) {
             return false;
           }
         }
 
-        // 2. Checa bloqueios específicos da agenda
+        // 2. Checa agendamento recorrente de cliente fixo ocupando este horário
+        if (selectedProfessional.id !== "any") {
+          const isRecurringClientBooked = recurringReservedSlots.some(
+            (r) => r.professional_id === selectedProfessional.id && r.time === timeStr
+          );
+          if (isRecurringClientBooked) return false;
+        }
+
+        // 3. Checa bloqueios pontuais e recorrentes da agenda
         const isBlocked = activeBlocks.some((b) => {
           const matchesBarber =
             !b.professional_id || selectedProfessional.id === "any" || b.professional_id === selectedProfessional.id;

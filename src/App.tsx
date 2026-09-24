@@ -15,6 +15,7 @@ import { AgendaPage } from "./pages/tenant/AgendaPage";
 import { ClientsPage } from "./pages/tenant/ClientsPage";
 import { ServicesPage } from "./pages/tenant/ServicesPage";
 import { ProfessionalsPage } from "./pages/tenant/ProfessionalsPage";
+import { SchedulesPage } from "./pages/tenant/SchedulesPage";
 import { FinancialPage } from "./pages/tenant/FinancialPage";
 import { StockPage } from "./pages/tenant/StockPage";
 import { ReportsPage } from "./pages/tenant/ReportsPage";
@@ -81,6 +82,7 @@ function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/agenda" element={<AgendaPage />} />
           <Route path="/clientes" element={<ClientsPage />} />
+          <Route path="/horarios" element={<ProtectedRoute allowedRoles={["owner", "admin", "receptionist"]}><SchedulesPage /></ProtectedRoute>} />
           <Route path="/servicos" element={<ProtectedRoute allowedRoles={["owner", "admin", "receptionist"]}><ServicesPage /></ProtectedRoute>} />
           <Route path="/profissionais" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><ProfessionalsPage /></ProtectedRoute>} />
           <Route path="/financeiro" element={<ProtectedRoute allowedRoles={["owner", "admin"]}><FinancialPage /></ProtectedRoute>} />

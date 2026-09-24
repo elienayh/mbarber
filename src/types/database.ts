@@ -222,6 +222,27 @@ export interface Database {
           created_at: string;
         };
       };
+      recurring_schedule_blocks: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          professional_id: string | null;
+          title: string;
+          recurrence_type: string;
+          day_of_week: number | null;
+          day_of_month: number | null;
+          week_of_month: number | null;
+          start_time: string;
+          end_time: string;
+          is_all_day: boolean;
+          start_date: string;
+          end_date: string | null;
+          is_active: boolean;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
       customers: {
         Row: {
           id: string;
@@ -252,7 +273,16 @@ export interface Database {
           end_date: string | null;
           total_occurrences: number;
           status: SeriesStatus;
+          rule_type?: string;
+          day_of_month?: number | null;
+          week_of_month?: number | null;
+          price_cents?: number | null;
+          notes?: string | null;
+          client_name?: string | null;
+          client_phone?: string | null;
+          is_active?: boolean;
           created_at: string;
+          updated_at?: string;
         };
       };
       appointments: {
